@@ -1,0 +1,11 @@
+# OPCIONAL: expõe a app também na rede local (http, sem Tailscale), p.ex. para o iPad em casa.
+# O acesso pelo Tailscale (127.0.0.1 + `tailscale serve`) mantém-se. Quem estiver na tua rede local e chegar a este
+# IP vê o ecrã de login: a proteção passa a ser só a palavra-passe. Usar apenas numa rede de casa de confiança.
+#
+#   1) pôr LAN_BIND_IP=<IP do mini-PC na LAN> no .env (e reservar esse IP no router, para não mudar)
+#   2) docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build
+# Para desligar: voltar a usar só `docker compose up -d --build`.
+services:
+  frontend:
+    ports:
+      - "${LAN_BIND_IP:?defina LAN_BIND_IP no .env (IP do mini-PC na rede local)}:${FRONTEND_PORT:-8080}:8080"

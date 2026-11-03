@@ -5,13 +5,34 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ...config import COOKIE_SECURE, SESSION_COOKIE, SESSION_TTL_DAYS
+from ... import config
+from ...config import SESSION_COOKIE, SESSION_TTL_DAYS
 from ...deps import Auth, client_ip, get_db, require_auth
 from ...models import Sessao, Utilizador
 from ...rate_limit import is_blocked, record_failure, reset
 from ...security import DUMMY_HASH, hash_token, new_token, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def cookie_secure(request: Request) -> bool:
+    """Cookie `Secure` conforme o modo: «true»/«false» forçam; «auto» só quando o acesso é por HTTPS.
+
+    Por HTTPS = esquema https, `X-Forwarded-Proto: https` (proxy) ou um nome `*.ts.net` (tailscale serve). Assim o
+    acesso pelo Tailscale continua com cookie Secure, e o acesso por HTTP na rede de casa (opt-in) consegue iniciar
+    sessão em vez de falhar em silêncio, porque o browser rejeitaria um cookie Secure recebido por http.
+    """
+    mode = config.COOKIE_SECURE_MODE
+    if mode in ("true", "1", "yes"):
+        return True
+    if mode in ("false", "0", "no"):
+        return False
+    host = request.headers.get("host", "").split(":")[0].lower()
+    return (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto", "").lower() == "https"
+        or host.endswith(".ts.net")
+    )
 
 
 class LoginIn(BaseModel):
@@ -54,7 +75,7 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
         token,
         max_age=SESSION_TTL_DAYS * 86400,
         httponly=True,
-        secure=COOKIE_SECURE,
+        secure=cookie_secure(request),
         samesite="lax",
         path="/",
     )

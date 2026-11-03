@@ -83,3 +83,31 @@ def test_utilizador_desativado(client, user, db):
 def test_password_curta_recusada(db):
     with pytest.raises(SystemExit):
         create_user("x", "X", "curta")
+
+
+@pytest.mark.parametrize(
+    ("modo", "headers", "esperado_secure"),
+    [
+        ("auto", {"host": "sagittariusa.taile17788.ts.net"}, True),  # tailscale serve
+        ("auto", {"x-forwarded-proto": "https"}, True),
+        (
+            "auto",
+            {"host": "192.168.2.30:8080"},
+            False,
+        ),  # rede de casa por http: tem de conseguir iniciar sessão
+        ("auto", {"host": "localhost"}, False),
+        ("true", {"host": "192.168.2.30:8080"}, True),  # forçado
+        ("false", {"host": "x.ts.net"}, False),
+    ],
+)
+def test_cookie_secure_depende_do_modo_e_de_como_se_acede(
+    client, user, monkeypatch, modo, headers, esperado_secure
+):
+    from app import config
+
+    monkeypatch.setattr(config, "COOKIE_SECURE_MODE", modo)
+    r = client.post("/api/auth/login", json={"username": "joao", "password": PW}, headers=headers)
+    assert r.status_code == 200
+    flags = r.headers["set-cookie"].lower()
+    assert ("secure" in flags.replace("samesite", "")) is esperado_secure
+    assert "httponly" in flags  # nunca se perde

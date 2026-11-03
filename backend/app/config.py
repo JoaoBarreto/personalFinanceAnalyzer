@@ -24,7 +24,8 @@ ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").lower() == "true"
 SESSION_COOKIE = "session"
 SESSION_TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "14"))
 # Cookie Secure por omissão (acesso via HTTPS do `tailscale serve`); desligar só em dev com http.
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
+# Cookie Secure: "auto" (omissão) = só quando o acesso é por HTTPS (tailscale serve); "true"/"false" forçam.
+COOKIE_SECURE_MODE = os.environ.get("COOKIE_SECURE", "auto").lower()
 # IPs dos proxies de confiança (nginx / tailscale serve), separados por vírgula
 TRUSTED_PROXIES = {p.strip() for p in os.environ.get("TRUSTED_PROXIES", "").split(",") if p.strip()}
 LOGIN_MAX_FAILURES = int(os.environ.get("LOGIN_MAX_FAILURES", "5"))
