@@ -183,3 +183,28 @@ def test_dinheiro_na_api_nunca_e_float(api):
     assert all(isinstance(ln["montante"], str) for ln in j["linhas"])
     done = confirm(api, j["id"]).json()
     assert isinstance(done["saldo_final"], str)
+
+
+def test_reversao_segue_a_ordem_de_confirmacao_e_nao_de_criacao(api, db):
+    x = up(api, build_csv(ROWS[:5])).json()["id"]  # criada primeiro
+    y = up(api, build_csv()).json()["id"]
+    assert y > x
+    assert confirm(api, y).json()["n_movimentos"] == N_LINHAS  # Y confirmada primeiro: é dona das linhas
+    assert confirm(api, x).json()["n_duplicados_ignorados"] == 5  # X é toda duplicada
+    assert api.delete(f"/api/imports/{y}").status_code == 409  # X é posterior (confirmada depois)
+    assert len(movs(db)) == N_LINHAS
+    assert api.delete(f"/api/imports/{x}").status_code == 204
+    assert api.delete(f"/api/imports/{y}").status_code == 204
+    assert movs(db) == []
+
+
+def test_previews_expiradas_sao_apagadas(api, db):
+    from datetime import UTC, datetime, timedelta
+
+    old = up(api, build_csv(ROWS[:3])).json()["id"]
+    imp = db.get(Importacao, old)
+    imp.expira_em = datetime.now(UTC) - timedelta(seconds=1)
+    db.commit()
+    db.expire_all()
+    up(api, build_csv(ROWS[:4]))  # qualquer novo preview dispara a limpeza
+    assert db.get(Importacao, old) is None

@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -163,6 +163,9 @@ def preview(db: Session, conta_id: int, filename: str, content: bytes, user_id: 
     conta = db.get(Conta, conta_id)
     if conta is None or conta.arquivada:
         raise ServiceError(404, "Conta não encontrada")
+    # limpeza oportunista de pré-visualizações expiradas (guardam descrições e montantes em staging)
+    db.execute(delete(Importacao).where(Importacao.estado == "preview", Importacao.expira_em <= _now()))
+    db.commit()
     fhash = hashlib.sha256(content).hexdigest()
     if db.scalar(
         select(Importacao.id).where(
@@ -353,7 +356,11 @@ def revert_or_cancel(db: Session, imp_id: int, user_id: int) -> None:
         .where(
             Importacao.conta_id == imp.conta_id,
             Importacao.estado == "confirmada",
-            Importacao.id > imp.id,
+            # "posterior" = confirmada depois (as duplicadas pertencem à primeira a confirmar), não criada depois
+            or_(
+                Importacao.confirmada_em > imp.confirmada_em,
+                and_(Importacao.confirmada_em == imp.confirmada_em, Importacao.id > imp.id),
+            ),
             Importacao.periodo_inicio <= imp.periodo_fim,
             Importacao.periodo_fim >= imp.periodo_inicio,
         )

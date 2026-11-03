@@ -12,6 +12,7 @@ from app.services.normalizer import normalize
         ("COMPRA 0000000.45 BK27052 MERCEARIA LISBOA", "MERCEARIA LISBOA"),
         ("COMPRA 0000000.56 BOMBA E0772", "BOMBA"),
         ("COMPRA 0000000.49 A9", "A9"),  # portagem: código curto é informação
+        ("COMPRA 0000000.28 03-TRANSACOES XYZ", "03-TRANSACOES XYZ"),  # 2 dígitos não é referência
         ("DD SERVICO LUZ-00000000000", "SERVICO LUZ"),
         ("TRF A CREDITO SEPA+ - EMPRESA X", "EMPRESA X"),
         ("Trf Imediata p/ Maria Silva", "MARIA SILVA"),

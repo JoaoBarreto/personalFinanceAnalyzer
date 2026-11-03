@@ -21,7 +21,7 @@ def _is_noise(tok: str) -> bool:
     if _NUMERIC.match(tok) or _CODE.match(tok):
         return True
     # referências alfanuméricas longas, ex.: B85YY73T4
-    return len(tok) >= 6 and sum(c.isdigit() for c in tok) >= 2 and any(c.isalpha() for c in tok)
+    return len(tok) >= 6 and sum(c.isdigit() for c in tok) >= 3 and any(c.isalpha() for c in tok)
 
 
 def normalize(descricao: str) -> str:
