@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
 from ...models import Categoria, Movimento
+from ...services.balances import saldo_abertura, saldo_em
 from ..scope import scope_conds
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -43,6 +44,17 @@ def _totals(db: Session, scope, incl, d0, d1) -> tuple[Decimal, Decimal]:
     return Decimal(r[0]), Decimal(r[1])
 
 
+def _transfer_net(db: Session, scope, d0: date, d1: date) -> Decimal:
+    """Soma (com sinal) dos movimentos de categorias do tipo transferência no período."""
+    q = (
+        select(func.coalesce(func.sum(Movimento.montante), 0))
+        .select_from(Movimento)
+        .join(Categoria, Categoria.id == Movimento.categoria_id)
+        .where(Categoria.tipo == "transferencia", Movimento.data_movimento.between(d0, d1), *scope)
+    )
+    return Decimal(db.scalar(q))
+
+
 def _s(x: Decimal) -> str:
     return str(x.quantize(Decimal("0.01")))
 
@@ -64,6 +76,8 @@ def _month_start(d: date, back: int) -> date:
 
 
 def _previous(d0: date, d1: date) -> tuple[date, date]:
+    if d0 == date(d0.year, 1, 1) and d1 == date(d0.year, 12, 31):  # ano civil completo -> ano anterior
+        return date(d0.year - 1, 1, 1), date(d0.year - 1, 12, 31)
     full_month = d0.day == 1 and d1 == d0.replace(day=calendar.monthrange(d0.year, d0.month)[1])
     if full_month:
         p0 = _month_start(d0, 1)
@@ -116,6 +130,9 @@ def summary(
             if avg is None
             else {"despesas": _s(avg[0]), "receitas": _s(avg[1]), "variacao_despesas_pct": _var(desp, avg[0])}
         )
+    inicio, fim = saldo_abertura(db, scope, d0, d1), saldo_em(db, scope, d1)
+    transf = ZERO if incluir_transferencias else _transfer_net(db, scope, d0, d1)  # senão já estão nos totais
+    diferenca = None if inicio is None or fim is None else fim - (inicio + rec - desp + transf)
     por_categorizar = db.scalar(
         select(func.count()).select_from(Movimento).where(Movimento.categoria_id.is_(None))
     )
@@ -123,7 +140,14 @@ def summary(
         "periodo": {"data_de": d0, "data_ate": d1},
         "despesas": _s(desp),
         "receitas": _s(rec),
-        "saldo_liquido": _s(rec - desp),
+        "poupanca": _s(rec - desp),
+        "saldo": {
+            "inicio": None if inicio is None else _s(inicio),
+            "fim": None if fim is None else _s(fim),
+            "transferencias": _s(transf),
+            "diferenca": None if diferenca is None else _s(diferenca),
+            "reconcilia": None if diferenca is None else diferenca == 0,
+        },
         "taxa_poupanca_pct": _pct(rec - desp, rec),
         "anterior": {
             "periodo": {"data_de": p0, "data_ate": p1},
@@ -177,6 +201,10 @@ def by_category(
     return {"periodo": {"data_de": d0, "data_ate": d1}, "total_despesas": _s(total), "itens": items}
 
 
+def _next_period(d: date, gran: str) -> date:
+    return date(d.year + 1, 1, 1) if gran == "ano" else _month_start(d, -1)
+
+
 @router.get("/monthly")
 def monthly(
     data_de: date | None = None,
@@ -184,6 +212,7 @@ def monthly(
     conta_id: int | None = None,
     titular: str | None = None,
     incluir_transferencias: bool = False,
+    granularidade: str = Query("mes", pattern="^(mes|ano)$"),
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
@@ -191,20 +220,85 @@ def monthly(
     if not data_ate:
         data_ate = db.scalar(select(func.max(Movimento.data_movimento))) or date.today()
     if not data_de:
-        data_de = _month_start(data_ate.replace(day=1), 11)
+        if granularidade == "ano":  # desde o ano do 1.º movimento
+            first = db.scalar(select(func.min(Movimento.data_movimento))) or data_ate
+            data_de = date(first.year, 1, 1)
+        else:
+            data_de = _month_start(data_ate.replace(day=1), 11)
+    trunc = func.date_trunc("year" if granularidade == "ano" else "month", Movimento.data_movimento)
+    rows = db.execute(
+        _base(trunc, DESPESA, RECEITA)
+        .where(*_filters(scope, incluir_transferencias, data_de, data_ate))
+        .group_by(trunc)
+        .order_by(trunc)
+    ).all()
+    by_period = {r[0].date(): (Decimal(r[1]), Decimal(r[2])) for r in rows}
+    out, cur = [], date(data_de.year, 1, 1) if granularidade == "ano" else data_de.replace(day=1)
+    while cur <= data_ate:  # inclui períodos sem movimentos, a zero
+        nxt = _next_period(cur, granularidade)
+        d, r = by_period.get(cur, (ZERO, ZERO))
+        fim = saldo_em(db, scope, nxt - timedelta(days=1))
+        out.append(
+            {
+                "periodo": cur.strftime("%Y" if granularidade == "ano" else "%Y-%m"),
+                "despesas": _s(d),
+                "receitas": _s(r),
+                "poupanca": _s(r - d),
+                "saldo_fim": None if fim is None else _s(fim),
+            }
+        )
+        cur = nxt
+    return {"granularidade": granularidade, "periodos": out}
+
+
+@router.get("/category-matrix")
+def category_matrix(
+    data_de: date | None = None,
+    data_ate: date | None = None,
+    conta_id: int | None = None,
+    titular: str | None = None,
+    incluir_transferencias: bool = False,
+    nivel: str = Query("pai", pattern="^(filho|pai)$"),
+    _: Auth = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Despesas por categoria × mês (só montante < 0, como em by-category). Por omissão, o ano do último movimento."""
+    scope = scope_conds(conta_id, titular)
+    if not data_de or not data_ate:
+        last = db.scalar(select(func.max(Movimento.data_movimento))) or date.today()
+        data_de, data_ate = data_de or date(last.year, 1, 1), data_ate or date(last.year, 12, 31)
+    group_id = func.coalesce(Categoria.parent_id, Categoria.id) if nivel == "pai" else Categoria.id
     mes = func.date_trunc("month", Movimento.data_movimento)
     rows = db.execute(
-        _base(mes, DESPESA, RECEITA)
-        .where(*_filters(scope, incluir_transferencias, data_de, data_ate))
-        .group_by(mes)
-        .order_by(mes)
+        _base(group_id, mes, func.sum(-Movimento.montante))
+        .where(Movimento.montante < 0, *_filters(scope, incluir_transferencias, data_de, data_ate))
+        .group_by(group_id, mes)
     ).all()
-    by_month = {r[0].date(): (Decimal(r[1]), Decimal(r[2])) for r in rows}
-    out, cur = [], data_de.replace(day=1)
-    while cur <= data_ate:  # inclui meses sem movimentos, a zero
-        d, r = by_month.get(cur, (ZERO, ZERO))
-        out.append(
-            {"mes": cur.strftime("%Y-%m"), "despesas": _s(d), "receitas": _s(r), "saldo_liquido": _s(r - d)}
-        )
+    meses, cur = [], data_de.replace(day=1)
+    while cur <= data_ate:
+        meses.append(cur.strftime("%Y-%m"))
         cur = _month_start(cur, -1)
-    return {"meses": out}
+    names = {c.id: c.nome for c in db.scalars(select(Categoria))}
+    cells: dict[int | None, dict[str, Decimal]] = {}
+    for gid, m, v in rows:
+        cells.setdefault(gid, {})[m.strftime("%Y-%m")] = Decimal(v)
+    linhas = []
+    for gid, vals in cells.items():
+        total = sum(vals.values(), ZERO)
+        linhas.append(
+            {
+                "categoria_id": gid,
+                "nome": names.get(gid, "Por categorizar"),
+                "valores": {m: _s(vals.get(m, ZERO)) for m in meses},
+                "total": _s(total),
+            }
+        )
+    linhas.sort(key=lambda x: Decimal(x["total"]), reverse=True)
+    totais = {m: _s(sum((c.get(m, ZERO) for c in cells.values()), ZERO)) for m in meses}
+    return {
+        "periodo": {"data_de": data_de, "data_ate": data_ate},
+        "meses": meses,
+        "linhas": linhas,
+        "totais": totais,
+        "total": _s(sum((Decimal(v) for v in totais.values()), ZERO)),
+    }

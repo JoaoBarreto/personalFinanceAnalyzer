@@ -19,7 +19,7 @@ def get(api, path, **params):
 def test_summary_totais_batem_com_soma_manual(api, db):
     import_all(api)
     s = get(api, "summary", data_de="2026-10-01", data_ate="2026-10-31")
-    assert (s["despesas"], s["receitas"], s["saldo_liquido"]) == ("872.99", "3280.91", "2407.92")
+    assert (s["despesas"], s["receitas"], s["poupanca"]) == ("872.99", "3280.91", "2407.92")
     assert s["taxa_poupanca_pct"] == str(((RECEITAS - DESPESAS) / RECEITAS * 100).quantize(D("0.01")))
     assert s["n_por_categorizar"] == 8
 
@@ -60,15 +60,15 @@ def test_by_category(api, db):
 def test_monthly_inclui_meses_vazios(api, db):
     import_all(api)
     import_all(api, [("05-12-2026", "05-12-2026", "COMPRA 0000000.99 LOJA", D("-10.00"))])
-    m = get(api, "monthly", data_de="2026-10-01", data_ate="2026-12-31")["meses"]
-    assert [x["mes"] for x in m] == ["2026-10", "2026-11", "2026-12"]
-    assert m[0]["despesas"] == "872.99" and m[1] == {
-        "mes": "2026-11",
-        "despesas": "0.00",
-        "receitas": "0.00",
-        "saldo_liquido": "0.00",
-    }
-    assert m[2]["despesas"] == "10.00" and m[2]["saldo_liquido"] == "-10.00"
+    j = get(api, "monthly", data_de="2026-10-01", data_ate="2026-12-31")
+    m = j["periodos"]
+    assert j["granularidade"] == "mes" and [x["periodo"] for x in m] == ["2026-10", "2026-11", "2026-12"]
+    assert m[0]["despesas"] == "872.99"
+    assert m[1]["despesas"] == m[1]["receitas"] == m[1]["poupanca"] == "0.00"
+    assert m[2]["despesas"] == "10.00" and m[2]["poupanca"] == "-10.00"
+    assert (
+        m[0]["saldo_fim"] == "3407.92" and m[1]["saldo_fim"] == "3407.92"
+    )  # sem movimentos: o saldo mantém-se
 
 
 def test_comparacoes_com_mes_anterior_e_medias(api, db):

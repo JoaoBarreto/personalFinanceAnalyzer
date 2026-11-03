@@ -59,6 +59,10 @@ class Line:
     ordem_no_dia: int
 
 
+def dataPt(d: date) -> str:
+    return d.strftime("%d/%m/%Y")
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -236,14 +240,29 @@ def preview(db: Session, conta_id: int, filename: str, content: bytes, user_id: 
         avisos.append(
             "Não foi possível determinar a ordem do ficheiro pela cadeia de saldos; assumida ascendente."
         )
-    last = db.scalar(
-        select(Movimento.saldo_apos)
+    # Continuidade dos dois lados do ficheiro (aviso, nunca bloqueio): a cadeia de saldos é global à conta
+    prev = db.execute(
+        select(Movimento.saldo_apos, Movimento.data_movimento)
         .where(Movimento.conta_id == conta_id, Movimento.data_movimento < lines[0].data_movimento)
         .order_by(Movimento.data_movimento.desc(), Movimento.ordem_no_dia.desc(), Movimento.id.desc())
         .limit(1)
-    )
-    if last is not None and last != saldo_inicial:
-        avisos.append("O saldo inicial do ficheiro não coincide com o último saldo já gravado da conta.")
+    ).first()
+    if prev is not None and prev.saldo_apos is not None and prev.saldo_apos != saldo_inicial:
+        avisos.append(
+            "O saldo inicial do ficheiro não coincide com o último saldo já gravado da conta "
+            f"({dataPt(prev.data_movimento)}): podem faltar movimentos antes de {dataPt(lines[0].data_movimento)}."
+        )
+    nxt = db.execute(
+        select(Movimento.saldo_apos, Movimento.montante, Movimento.data_movimento)
+        .where(Movimento.conta_id == conta_id, Movimento.data_movimento > lines[-1].data_movimento)
+        .order_by(Movimento.data_movimento, Movimento.ordem_no_dia, Movimento.id)
+        .limit(1)
+    ).first()
+    if nxt is not None and nxt.saldo_apos is not None and nxt.saldo_apos - nxt.montante != saldo_final:
+        avisos.append(
+            "O saldo final do ficheiro não coincide com o saldo inicial dos movimentos já gravados a seguir "
+            f"({dataPt(nxt.data_movimento)}): podem faltar movimentos depois de {dataPt(lines[-1].data_movimento)}."
+        )
     if res.possiveis_duplicados:
         avisos.append("Há possíveis duplicados; por omissão não são gravados.")
 
