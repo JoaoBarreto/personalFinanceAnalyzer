@@ -14,7 +14,7 @@ migrate:
 test-db:  # testes com BD: Postgres descartável em Podman/Docker
 	-docker rm -f pfa-test-db 2>/dev/null || podman rm -f pfa-test-db 2>/dev/null
 	$(or $(shell command -v docker),podman) run -d --name pfa-test-db -e POSTGRES_PASSWORD=t -e POSTGRES_USER=pfa -e POSTGRES_DB=pfa -p 127.0.0.1:55432:5432 docker.io/library/postgres:16
-	sleep 6
+	for i in $$(seq 30); do $(or $(shell command -v docker),podman) exec pfa-test-db pg_isready -U pfa >/dev/null 2>&1 && break; sleep 1; done; sleep 1
 	cd backend && TEST_DATABASE_URL=postgresql+psycopg://pfa:t@127.0.0.1:55432/pfa .venv/bin/pytest -q; rc=$$?; $(or $(shell command -v docker),podman) rm -f pfa-test-db; exit $$rc
-create-user:  # make create-user USERNAME=joao NOME="João"
-	$(COMPOSE) exec backend python -m app.cli create-user $(USERNAME) --nome "$(NOME)"
+create-user:  # make create-user USERNAME=joao NOME="João"   (não interativo: echo pw | make create-user ... EXEC=-T ARGS=--password-stdin)
+	$(COMPOSE) exec $(EXEC) backend python -m app.cli create-user $(USERNAME) --nome "$(NOME)" $(ARGS)

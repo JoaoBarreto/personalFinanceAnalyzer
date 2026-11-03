@@ -1,6 +1,25 @@
 import os
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg://pfa:change-me@localhost:5432/pfa")
+from sqlalchemy import URL
+
+
+def _database_url() -> str:
+    """DATABASE_URL (override opcional) ou construída das variáveis POSTGRES_* (escapa a password)."""
+    if url := os.environ.get("DATABASE_URL"):
+        return url
+    return URL.create(
+        "postgresql+psycopg",
+        username=os.environ.get("POSTGRES_USER", "pfa"),
+        password=os.environ.get("POSTGRES_PASSWORD", "change-me"),
+        host=os.environ.get("POSTGRES_HOST", "localhost"),
+        port=int(os.environ.get("POSTGRES_PORT", "5432")),
+        database=os.environ.get("POSTGRES_DB", "pfa"),
+    ).render_as_string(hide_password=False)
+
+
+DATABASE_URL = _database_url()
+# /docs, /redoc e /openapi.json desligados por omissão (a app é privada)
+ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "false").lower() == "true"
 
 SESSION_COOKIE = "session"
 SESSION_TTL_DAYS = int(os.environ.get("SESSION_TTL_DAYS", "14"))

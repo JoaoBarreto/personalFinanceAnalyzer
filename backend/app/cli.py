@@ -27,10 +27,14 @@ def main(argv: list[str] | None = None) -> None:
     c = sub.add_parser("create-user")
     c.add_argument("username")
     c.add_argument("--nome", required=True)
+    c.add_argument("--password-stdin", action="store_true", help="ler a password do stdin (não interativo)")
     args = p.parse_args(argv)
-    pw = getpass.getpass("Password: ")
-    if pw != getpass.getpass("Repetir password: "):
-        raise SystemExit("As passwords não coincidem.")
+    if args.password_stdin:
+        pw = sys.stdin.readline().rstrip("\n")
+    else:
+        pw = getpass.getpass("Password: ")
+        if pw != getpass.getpass("Repetir password: "):
+            raise SystemExit("As passwords não coincidem.")
     create_user(args.username, args.nome, pw)
     print(f"Utilizador {args.username!r} criado.", file=sys.stderr)
 
