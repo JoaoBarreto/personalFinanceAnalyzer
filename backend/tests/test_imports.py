@@ -244,3 +244,18 @@ def test_csv_guardado_noutra_aplicacao_e_recusado_e_nao_grava_nada(api, db):
     # o mesmo extrato, no formato original do banco, entra com os valores certos
     ok = up(api, build_csv(rows, saldo_inicial=D("38000.00"))).json()
     assert [ln["montante"] for ln in ok["linhas"]] == ["-889.50", "32.82"] and ok["saldo_final"] == "37143.32"
+
+
+def test_aviso_quando_o_extrato_parece_o_mesmo_com_valores_diferentes(api, db):
+    """Regressão: a versão errada (×100) ficou gravada e a correta entrou ao lado, sem ninguém avisar."""
+    confirm(api, up(api, build_csv()).json()["id"])
+    errado = [(a, b, c, d * 100) for a, b, c, d in ROWS]  # mesmas datas e descrições, montantes ×100
+    p = up(api, build_csv(errado, saldo_inicial=D("100000.00"))).json()
+    assert p["resumo"]["duplicado"] == 0  # a deduplicação não os junta (montantes diferentes)
+    assert any("mesmo extrato com valores diferentes" in a for a in p["avisos"])
+
+
+def test_sem_aviso_num_extrato_sobreposto_normal(api, db):
+    confirm(api, up(api, build_csv(ROWS[:5])).json()["id"])
+    p = up(api, build_csv()).json()
+    assert not any("valores diferentes" in a for a in p["avisos"])

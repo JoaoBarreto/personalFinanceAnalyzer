@@ -13,9 +13,11 @@ export function CoverageBanner() {
       <strong>Podem faltar movimentos.</strong>{" "}
       {bad.map((c) => (
         <span key={c.conta_id}>
-          {c.nome}: {c.falhas.map((f) => `entre ${dataPt(f.de)} e ${dataPt(f.ate)}`).join("; ")}.{" "}
+          {c.nome}: {c.falhas.length} falha(s) na cadeia de saldos, a primeira entre {dataPt(c.falhas[0].de)} e {dataPt(c.falhas[0].ate)}
+          {c.falhas.length > 1 ? ` (e mais ${c.falhas.length - 1})` : ""}.{" "}
         </span>
       ))}
+      Muitas falhas seguidas costumam indicar o mesmo extrato importado duas vezes com valores diferentes.{" "}
       <Link to="/importar">Importar o período em falta →</Link>
     </div>
   );

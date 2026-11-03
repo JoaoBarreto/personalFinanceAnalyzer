@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down test test-db test-frontend lint migrate create-user
+.PHONY: up down test test-db test-frontend lint migrate create-user reset-data
 up:
 	$(COMPOSE) up --build -d
 down:
@@ -20,3 +20,5 @@ create-user:  # make create-user USERNAME=joao NOME="João"   (não interativo: 
 	$(COMPOSE) exec $(EXEC) backend python -m app.cli create-user $(USERNAME) --nome "$(NOME)" $(ARGS)
 test-frontend:  # typecheck + vitest num contentor node (não precisa de node local)
 	$(or $(shell command -v docker),podman) run --rm -v "$(CURDIR)/frontend":/app:Z -w /app docker.io/library/node:22-alpine sh -c "npm install --no-audit --no-fund && npm run typecheck && npm test"
+reset-data:  # apaga movimentos e importações; mantém categorias, regras e contas; converte categorizações manuais em regras
+	$(COMPOSE) exec backend python -m app.cli reset-movements

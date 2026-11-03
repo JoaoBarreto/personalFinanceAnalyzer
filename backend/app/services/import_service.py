@@ -263,6 +263,27 @@ def preview(db: Session, conta_id: int, filename: str, content: bytes, user_id: 
             "O saldo final do ficheiro não coincide com o saldo inicial dos movimentos já gravados a seguir "
             f"({dataPt(nxt.data_movimento)}): podem faltar movimentos depois de {dataPt(lines[-1].data_movimento)}."
         )
+    # Mesmo extrato com valores diferentes (ex.: guardado com outro formato): coincide em data+descrição com o que já
+    # está gravado mas os montantes diferem, por isso a deduplicação não o apanha e ficariam as duas versões.
+    guardadas = set(
+        db.execute(
+            select(Movimento.data_movimento, Movimento.descricao_normalizada).where(
+                Movimento.conta_id == conta_id,
+                Movimento.data_movimento.between(lines[0].data_movimento, lines[-1].data_movimento),
+            )
+        )
+    )
+    suspeitas = sum(
+        1
+        for ln in lines
+        if estados[ln.i] != "duplicado" and (ln.data_movimento, normalize(ln.descricao_original)) in guardadas
+    )
+    if suspeitas >= 5 and suspeitas >= 0.3 * len(lines):
+        avisos.append(
+            f"{suspeitas} de {len(lines)} linhas têm a mesma data e descrição que movimentos já gravados, mas montantes "
+            "diferentes. Pode ser o mesmo extrato com valores diferentes (por exemplo, guardado com outro formato): "
+            "se já importou uma versão errada, reverta-a antes de confirmar esta."
+        )
     if res.possiveis_duplicados:
         avisos.append("Há possíveis duplicados; por omissão não são gravados.")
 
