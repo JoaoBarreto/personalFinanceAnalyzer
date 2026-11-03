@@ -216,3 +216,12 @@ def test_listar_importacoes(api):
     lst = api.get("/api/imports").json()
     assert [i["estado"] for i in lst] == ["preview", "confirmada"] and lst[1]["id"] == a
     assert lst[1]["n_movimentos"] == 3 and "staging" not in lst[1] and "linhas" not in lst[1]
+
+
+def test_meses_encadeados_sem_avisos(api, db):
+    """Mês a mês, com o saldo inicial a coincidir com o último saldo gravado: nada a avisar."""
+    confirm(api, up(api, build_csv(ROWS[:3])).json()["id"])  # termina em 1229,61
+    p = up(api, build_csv(ROWS[3:], saldo_inicial=D("1229.61"))).json()
+    assert p["avisos"] == [] and p["reconciliado"] is True
+    assert confirm(api, p["id"]).json()["n_movimentos"] == N_LINHAS - 3
+    assert [m.montante for m in movs(db)] == [row[3] for row in ROWS]  # histórico completo e em ordem

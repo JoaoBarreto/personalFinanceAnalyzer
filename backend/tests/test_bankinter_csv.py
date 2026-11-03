@@ -90,3 +90,70 @@ def test_nao_bankinter():
 
 def test_can_parse(content):
     assert parser.can_parse(content) == 1.0
+
+
+# --- Robustez a variações do ficheiro exportado --------------------------------------------------
+
+
+def _same_as_baseline(raw: bytes, content: bytes):
+    base, got = parser.parse(content), parser.parse(raw)
+    assert [(m.data_movimento, m.montante, m.saldo_apos, m.descricao_original) for m in got.movimentos] == [
+        (m.data_movimento, m.montante, m.saldo_apos, m.descricao_original) for m in base.movimentos
+    ]
+    assert (
+        got.reconciliado and got.saldo_inicial == base.saldo_inicial and got.saldo_final == base.saldo_final
+    )
+
+
+def test_quebras_de_linha_windows(content):
+    _same_as_baseline(content.replace(b"\n", b"\r\n"), content)
+
+
+def test_bom_utf8(content):
+    _same_as_baseline(b"\xef\xbb\xbf" + content, content)
+
+
+def test_separador_ponto_e_virgula(content):
+    import csv
+    import io
+
+    rows = list(csv.reader(io.StringIO(content.decode())))
+    out = io.StringIO()
+    csv.writer(out, delimiter=";", lineterminator="\n").writerows(rows)
+    _same_as_baseline(out.getvalue().encode(), content)
+
+
+def test_milhares_com_ponto(content):
+    import re
+
+    text = re.sub(r'"(-?)(\d{1,3})(\d{3}),(\d\d)"', r'"\1\2.\3,\4"', content.decode())
+    assert '"2.380,91"' in text  # a variante foi mesmo aplicada
+    _same_as_baseline(text.encode(), content)
+
+
+def test_linhas_de_cabecalho_a_mais_e_sem_rodape(content):
+    lines = content.decode().splitlines()
+    cut = next(i for i, l in enumerate(lines) if l.startswith(" ,,,") and i > 8)  # antes do rodapé
+    raw = "\n".join(["Extra 1,,,,,,,,", "Extra 2,,,,,,,,", "Extra 3,,,,,,,,", *lines[:cut]]).encode()
+    _same_as_baseline(raw, content)
+
+
+def test_so_cabecalho_ou_vazio(content):
+    header_only = b"\n".join(content.split(b"\n")[:8])
+    for raw in (header_only, b"", b"\n\n\n"):
+        with pytest.raises(ParseError):
+            parser.parse(raw)
+
+
+def test_linha_truncada_da_erro_claro(content):
+    lines = content.decode().split("\n")
+    i = next(k for k, l in enumerate(lines) if l.startswith("02-10-2026"))
+    lines[i] = "02-10-2026,02-10-2026"
+    with pytest.raises(ParseError, match="Linha"):
+        parser.parse("\n".join(lines).encode())
+
+
+def test_numero_invalido_da_erro_claro(content):
+    bad = content.replace(b'"-2,25"', b'"abc"', 1)
+    with pytest.raises(ParseError):
+        parser.parse(bad)
