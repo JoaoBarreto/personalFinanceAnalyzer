@@ -11,7 +11,7 @@ type Preview = {
   periodo_inicio: string; periodo_fim: string; ordem_ficheiro: string; avisos: string[]; linhas: Line[];
   resumo: { novo: number; duplicado: number; possivel_duplicado: number };
 };
-type Done = { n_movimentos: number; n_duplicados_ignorados: number; n_excluidos_utilizador: number };
+type Done = { n_movimentos: number; n_duplicados_ignorados: number; n_excluidos_utilizador: number; categorizacoes_restauradas?: number };
 type ImportRow = { id: number; ficheiro_nome: string; estado: string; periodo_inicio: string; periodo_fim: string; n_movimentos: number; n_duplicados_ignorados: number };
 type Correction = { montante?: string; saldo_apos?: string };
 
@@ -63,7 +63,7 @@ export default function Import() {
   });
   const cancel = () => wrap(async () => { if (preview) await api.del(`/api/imports/${preview.id}`); setPreview(null); history.reload(); });
   const revert = (r: ImportRow) => {
-    if (!confirm(`Reverter «${r.ficheiro_nome}»? Os ${r.n_movimentos} movimentos serão apagados e as categorizações manuais perdem-se.`)) return;
+    if (!confirm(`Reverter «${r.ficheiro_nome}»? Os ${r.n_movimentos} movimentos serão apagados. As categorizações que fez à mão ficam guardadas e reaplicam-se se importar o extrato de novo.`)) return;
     void wrap(async () => { await api.del(`/api/imports/${r.id}`); history.reload(); });
   };
 
@@ -88,7 +88,7 @@ export default function Import() {
       )}
       {done && (
         <div className="card ok" role="status">
-          <strong>Importação concluída:</strong> {done.n_movimentos} movimentos gravados, {done.n_duplicados_ignorados} duplicados ignorados, {done.n_excluidos_utilizador} excluídos por si.{" "}
+          <strong>Importação concluída:</strong> {done.n_movimentos} movimentos gravados, {done.n_duplicados_ignorados} duplicados ignorados, {done.n_excluidos_utilizador} excluídos por si.{done.categorizacoes_restauradas ? ` ${done.categorizacoes_restauradas} categorizações feitas por si anteriormente foram recuperadas.` : ""}{" "}
           <Link to="/rever">Categorizar agora →</Link>
         </div>
       )}

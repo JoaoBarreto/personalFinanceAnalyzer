@@ -24,6 +24,7 @@ from ..parsers.registry import get_parser
 from .categorizer import categorize
 from .dedup import DedupResult, Row, deduplicate
 from .normalizer import normalize
+from .saved_categorization import apply_saved, save_manual
 
 PREVIEW_TTL = timedelta(hours=24)
 
@@ -391,6 +392,7 @@ def confirm(db: Session, imp_id: int, body: ConfirmIn, user_id: int) -> dict[str
         novos.append(mov)
     # Categorização automática: regras, depois histórico (PRD 3.5); manuais nunca são tocadas
     db.flush()
+    restauradas = apply_saved(db, imp.conta_id, novos, user_id)  # escolhas manuais guardadas (reset/reversão)
     categorize(db, novos, only_uncategorized=True)
     imp.estado, imp.confirmada_em = "confirmada", _now()
     imp.n_movimentos, imp.n_duplicados_ignorados = len(to_insert), len(ignorados)
@@ -401,7 +403,9 @@ def confirm(db: Session, imp_id: int, body: ConfirmIn, user_id: int) -> dict[str
     except IntegrityError as e:  # corrida na unicidade (conta, hash) confirmada
         db.rollback()
         raise ServiceError(409, "Este ficheiro já foi importado nesta conta.") from e
-    return _view(imp, None, [])
+    view = _view(imp, None, [])
+    view["categorizacoes_restauradas"] = restauradas
+    return view
 
 
 def revert_or_cancel(db: Session, imp_id: int, user_id: int) -> None:
@@ -433,6 +437,8 @@ def revert_or_cancel(db: Session, imp_id: int, user_id: int) -> None:
         raise ServiceError(
             409, "Existe uma importação posterior com período sobreposto; reverta primeiro por ordem inversa."
         )
+    # as escolhas manuais não se perdem: ficam guardadas e reaplicam-se se o extrato for reimportado
+    save_manual(db, db.scalars(select(Movimento).where(Movimento.importacao_id == imp.id)))
     db.execute(delete(Movimento).where(Movimento.importacao_id == imp.id))
     imp.estado, imp.revertida_em, imp.revertida_por = "revertida", _now(), user_id
     imp.n_movimentos = 0

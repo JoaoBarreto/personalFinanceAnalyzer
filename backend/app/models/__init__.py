@@ -192,3 +192,19 @@ class Movimento(Base):
         ),
         Index("ix_movimentos_importacao", "importacao_id"),
     )
+
+
+class CategorizacaoGuardada(Base):
+    """Categorização manual guardada quando os movimentos são apagados (reset ou reversão de importação).
+
+    Reaplica-se, linha a linha, quando o extrato é reimportado (mesma conta, data e descrição normalizada).
+    """
+
+    __tablename__ = "categorizacoes_guardadas"
+    id: Mapped[int] = _id()
+    conta_id: Mapped[int] = mapped_column(ForeignKey("contas.id", ondelete="CASCADE"))
+    data_movimento: Mapped[date] = mapped_column(Date)
+    descricao_normalizada: Mapped[str] = mapped_column(Text)
+    categoria_id: Mapped[int] = mapped_column(ForeignKey("categorias.id"))
+    criada_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+    __table_args__ = (Index("ix_cat_guardadas_chave", "conta_id", "data_movimento", "descricao_normalizada"),)

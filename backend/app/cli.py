@@ -28,8 +28,13 @@ def reset_movements(yes: bool) -> None:
         print(
             f"Vai apagar {n['movimentos']} movimentos e {n['importacoes']} importações.\n"
             f"As categorias, as regras, as contas e os utilizadores ficam.\n"
-            f"{n['categorizacoes_manuais']} categorizações feitas à mão serão convertidas em regras "
-            f"(descrição exata → categoria), para se aplicarem sozinhas na reimportação.",
+            f"As {n['categorizacoes_manuais']} categorizações feitas à mão ficam guardadas linha a linha "
+            f"(data + descrição) e reaplicam-se tal como estão quando reimportar o extrato"
+            + (
+                f"; {n['descricoes_com_excecoes']} descrição(ões) têm categorias diferentes em linhas diferentes e mantêm-nas."
+                if n["descricoes_com_excecoes"]
+                else "."
+            ),
             file=sys.stderr,
         )
         if not yes and input("Escreva APAGAR para confirmar: ").strip() != "APAGAR":
@@ -37,7 +42,8 @@ def reset_movements(yes: bool) -> None:
         r = reset.reset_movements(db)
     print(
         f"Feito: {r['movimentos_apagados']} movimentos e {r['importacoes_apagadas']} importações apagados; "
-        f"{r['regras_criadas']} regras criadas. Importe agora o ficheiro original do homebanking.",
+        f"{r['categorizacoes_guardadas']} categorizações manuais guardadas. "
+        "Importe agora o extrato (.xls) do homebanking.",
         file=sys.stderr,
     )
 
