@@ -156,3 +156,56 @@ def test_matriz_por_omissao_e_o_ano_do_ultimo_movimento(api, db):
     import_all(api)
     m = get(api, "category-matrix")
     assert m["meses"][0] == "2026-01" and m["meses"][-1] == "2026-12" and len(m["meses"]) == 12
+
+
+def _ano_inteiro():
+    """Um ano de movimentos (50 por mês) num só ficheiro, com datas de janeiro a dezembro de 2026."""
+    rows = []
+    for m in range(1, 13):
+        rows.append((f"02-{m:02d}-2026", f"02-{m:02d}-2026", "TRF A CREDITO SEPA+ - EMPRESA X", D("2000.00")))
+        for k in range(48):
+            d = 3 + k // 3  # dias 3..18
+            rows.append(
+                (
+                    f"{d:02d}-{m:02d}-2026",
+                    f"{d:02d}-{m:02d}-2026",
+                    f"COMPRA 0000000.{k:02d} LOJA {k}",
+                    D("-10.00"),
+                )
+            )
+        rows.append((f"28-{m:02d}-2026", f"28-{m:02d}-2026", "IMPOSTO DO SELO S/ COMISSAO", D("-0.50")))
+    return rows
+
+
+def test_extrato_do_ano_inteiro_separa_por_mes(api, db):
+    import time
+
+    rows = _ano_inteiro()
+    t0 = time.perf_counter()
+    p = up(api, build_csv(rows, saldo_inicial=D("1000.00"))).json()
+    assert p["reconciliado"] is True and p["resumo"]["novo"] == len(rows) == 600
+    assert confirm(api, p["id"]).json()["n_movimentos"] == 600
+    assert time.perf_counter() - t0 < 10  # PRD: ~300 movimentos em < 5 s; aqui 600 com folga
+
+    # cada linha foi parar ao mês da sua data
+    j = get(api, "monthly", data_de="2026-01-01", data_ate="2026-12-31")["periodos"]
+    assert [x["periodo"] for x in j] == [f"2026-{m:02d}" for m in range(1, 13)]
+    assert all(x["receitas"] == "2000.00" and x["despesas"] == "480.50" for x in j)  # 48×10 + 0,50
+    assert j[0]["saldo_fim"] == "2519.50" and j[11]["saldo_fim"] == str(D("1000.00") + 12 * D("1519.50"))
+    ano = get(api, "monthly", granularidade="ano")["periodos"][0]
+    assert (ano["receitas"], ano["despesas"]) == ("24000.00", "5766.00")
+    assert get(api, "summary", data_de="2026-03-01", data_ate="2026-03-31")["saldo"]["reconcilia"] is True
+    assert get(api, "summary", data_de="2026-01-01", data_ate="2026-12-31")["saldo"]["reconcilia"] is True
+    assert api.get("/api/coverage").json()[0]["ok"] is True
+
+
+def test_mes_avulso_depois_do_ano_inteiro_nao_duplica(api, db):
+    rows = _ano_inteiro()
+    confirm(api, up(api, build_csv(rows, saldo_inicial=D("1000.00"))).json()["id"])
+    marco = [r for r in rows if r[0].endswith("-03-2026")]
+    abertura = D("1000.00") + 2 * D("1519.50")  # saldo antes de março
+    p = up(api, build_csv(marco, saldo_inicial=abertura)).json()
+    assert p["reconciliado"] is True and p["avisos"] == []
+    assert p["resumo"] == {"novo": 0, "duplicado": 50, "possivel_duplicado": 0}
+    assert confirm(api, p["id"]).json()["n_movimentos"] == 0
+    assert api.get("/api/transactions", params={"page_size": 1}).json()["total"] == 600
