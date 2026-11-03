@@ -28,11 +28,22 @@ N_LINHAS = len(ROWS)
 SALDO_FINAL = D("3407.92")  # constante escrita à mão, para o teste não ser circular
 
 
+ESTILOS = ("virgula", "ponto", "virgula_milhares", "ponto_milhares")
+
+
+def _num(x: D, estilo: str = "virgula") -> str:
+    """Formata como o homebanking: «1234,56», «1234.56», «1.234,56» ou «1,234.56»."""
+    base = f"{x:,.2f}" if estilo.endswith("_milhares") else f"{x:.2f}"  # 1,234.56 | 1234.56
+    if estilo.startswith("virgula"):
+        base = base.replace(",", "\0").replace(".", ",").replace("\0", ".")
+    return f'"{base}"'
+
+
 def _pt(x: D) -> str:
-    return f'"{x:.2f}"'.replace(".", ",")
+    return _num(x, "virgula")
 
 
-def build_csv(rows=None, saldo_inicial=SALDO_INICIAL) -> bytes:
+def build_csv(rows=None, saldo_inicial=SALDO_INICIAL, estilo="virgula") -> bytes:
     rows = ROWS if rows is None else rows
     lines = [
         ",,,,,,,,",
@@ -48,7 +59,7 @@ def build_csv(rows=None, saldo_inicial=SALDO_INICIAL) -> bytes:
     for dm, dv, desc, m in rows:
         saldo += m
         d = f'"{desc}"' if "," in desc else desc
-        lines.append(f"{dm},{dv},{d},-,{_pt(m)},EUR,{_pt(saldo)},-,-")
+        lines.append(f"{dm},{dv},{d},-,{_num(m, estilo)},EUR,{_num(saldo, estilo)},-,-")
     lines += [
         " ,,,,,,,,",
         '"Conforme condições definidas em Preçário, disponível online. Texto legal, com vírgulas.",,,,,,,,',
@@ -60,6 +71,12 @@ def build_csv(rows=None, saldo_inicial=SALDO_INICIAL) -> bytes:
 @pytest.fixture
 def content() -> bytes:
     return build_csv()
+
+
+@pytest.fixture(params=ESTILOS)
+def content_any(request) -> bytes:
+    """O mesmo extrato nos quatro formatos numéricos possíveis."""
+    return build_csv(estilo=request.param)
 
 
 @pytest.fixture(scope="session")

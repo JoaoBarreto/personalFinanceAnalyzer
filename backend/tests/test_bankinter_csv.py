@@ -6,7 +6,7 @@ import pytest
 from app.parsers.banks.bankinter.csv_export import BankinterCsvParser
 from app.parsers.base import ParseError
 
-from .conftest import N_LINHAS, SALDO_FINAL, SALDO_INICIAL
+from .conftest import N_LINHAS, SALDO_FINAL, SALDO_INICIAL, build_csv
 
 parser = BankinterCsvParser()
 
@@ -157,3 +157,71 @@ def test_numero_invalido_da_erro_claro(content):
     bad = content.replace(b'"-2,25"', b'"abc"', 1)
     with pytest.raises(ParseError):
         parser.parse(bad)
+
+
+# --- Separador decimal: ponto ou vírgula (regressão: «-889.50» lido como -88950) ------------------
+
+
+def test_todos_os_estilos_numericos_dao_os_mesmos_valores(content_any):
+    s = parser.parse(content_any)
+    assert len(s.movimentos) == N_LINHAS and s.reconciliado
+    assert (s.saldo_inicial, s.saldo_final) == (SALDO_INICIAL, SALDO_FINAL)
+    assert sum(m.montante for m in s.movimentos) == D("2407.92")
+    assert [m.montante for m in s.movimentos][:3] == [D("900.00"), D("-2.25"), D("-668.14")]
+
+
+def test_regressao_valores_do_ecra_do_utilizador():
+    from app.parsers.banks.bankinter.csv_export import _parse_amount, detect_number_style
+
+    for raw, esperado in [
+        ("-21.00", "-21.00"),
+        ("32.82", "32.82"),
+        ("-889.50", "-889.50"),
+        ("2,380.91", "2380.91"),
+    ]:
+        style = detect_number_style([raw, "0.10"])
+        assert style == "ponto" and _parse_amount(raw, style) == D(
+            esperado
+        )  # antes: -2100, 3282, -88950, 2.38091
+    assert _parse_amount("-889,50", "virgula") == D("-889.50")
+
+
+def test_ficheiro_com_ponto_decimal_nao_multiplica_por_100():
+    rows = [
+        ("05-01-2026", "05-01-2026", "PAG. IMPOSTOS", D("-221.54")),
+        ("06-01-2026", "06-01-2026", "MEO", D("10.94")),
+    ]
+    s = parser.parse(build_csv(rows, saldo_inicial=D("1000.00"), estilo="ponto"))
+    assert [m.montante for m in s.movimentos] == [D("-221.54"), D("10.94")]
+    assert s.saldo_final == D("789.40") and s.reconciliado
+
+
+def test_mistura_de_estilos_e_recusada(content):
+    mixed = build_csv(estilo="ponto").replace(b'"-2.25"', b'"-2,25"', 1)
+    with pytest.raises(ParseError, match="inconsistente"):
+        parser.parse(mixed)
+
+
+def test_valores_ambiguos_sem_decimais_sao_recusados():
+    from app.parsers.banks.bankinter.csv_export import detect_number_style
+
+    with pytest.raises(ParseError, match="ambíguos"):
+        detect_number_style(["1.234", "-2.500"])
+    assert detect_number_style(["100", "-50"]) == "virgula"  # inteiros simples: sem ambiguidade
+
+
+def test_mais_de_duas_casas_decimais_e_agrupamento_invalido_sao_recusados():
+    from app.parsers.banks.bankinter.csv_export import _parse_amount
+
+    for style in ("virgula", "ponto"):
+        for bad in ("2.38091", "2,38091", "12.34.5", "1,2345.00" if style == "ponto" else "1.2345,00"):
+            with pytest.raises(ParseError):
+                _parse_amount(bad, style)
+
+
+def test_decisao_pelo_ultimo_separador():
+    from app.parsers.banks.bankinter.csv_export import detect_number_style
+
+    assert detect_number_style(["1.234.567,89"]) == "virgula"
+    assert detect_number_style(["1,234,567.89"]) == "ponto"
+    assert detect_number_style(["2,380.91"]) == "ponto" and detect_number_style(["2.380,91"]) == "virgula"

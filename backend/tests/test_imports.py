@@ -225,3 +225,25 @@ def test_meses_encadeados_sem_avisos(api, db):
     assert p["avisos"] == [] and p["reconciliado"] is True
     assert confirm(api, p["id"]).json()["n_movimentos"] == N_LINHAS - 3
     assert [m.montante for m in movs(db)] == [row[3] for row in ROWS]  # histórico completo e em ordem
+
+
+def test_importar_com_ponto_decimal_guarda_os_valores_certos(api, db):
+    """Regressão: um extrato com «-889.50» tem de gravar -889.50 e não -88950."""
+    rows = [
+        ("05-01-2026", "05-01-2026", "COMPRA 0000000.01 LOJA A", D("-889.50")),
+        ("06-01-2026", "06-01-2026", "TRF A CREDITO SEPA+ - MEO", D("32.82")),
+        ("07-01-2026", "07-01-2026", "COMPRA 0000000.02 LOJA B", D("-21.00")),
+    ]
+    for estilo in ("ponto", "ponto_milhares"):
+        p = up(api, build_csv(rows, saldo_inicial=D("38000.00"), estilo=estilo)).json()
+        assert (
+            p["saldo_inicial"] == "38000.00" and p["saldo_final"] == "37122.32" and p["reconciliado"] is True
+        )
+        assert [ln["montante"] for ln in p["linhas"]] == ["-889.50", "32.82", "-21.00"]
+        assert confirm(api, p["id"]).status_code == 200
+        assert [m.montante for m in movs(db)] == [D("-889.50"), D("32.82"), D("-21.00")]
+        assert (
+            api.delete(f"/api/imports/{p['id']}").status_code == 204
+        )  # reverter para testar o estilo seguinte
+    r = api.get("/api/transactions", params={"q": "LOJA"}).json()
+    assert r["total"] == 0

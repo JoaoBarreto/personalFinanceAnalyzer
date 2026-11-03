@@ -11,7 +11,7 @@ import csv
 import io
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from ...base import ParsedMovement, ParsedStatement, ParseError
 from ...reconcile import chronological_breaks, detect_order
@@ -36,11 +36,57 @@ def _parse_date(s: str) -> date:
     return datetime.strptime(s.strip(), "%d-%m-%Y").date()
 
 
-def _parse_amount(s: str) -> Decimal:
-    try:
-        return Decimal(s.strip().replace(".", "").replace(" ", "").replace(",", "."))
-    except InvalidOperation as e:
-        raise ParseError(f"Número inválido: {s!r}") from e
+# Formatos numéricos aceites. O separador decimal é detetado UMA vez por ficheiro (nunca por célula, nem por omissão):
+# um ficheiro com `-889.50` lido como se o ponto fosse separador de milhares dava -88950, e a reconciliação de
+# saldos não o apanha porque multiplica montantes e saldos pelo mesmo fator.
+_STYLE_RE = {
+    "virgula": re.compile(r"^[+-]?(\d{1,3}(\.\d{3})+|\d+)(,\d{1,2})?$"),  # 1.234,56
+    "ponto": re.compile(r"^[+-]?(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$"),  # 1,234.56
+}
+
+
+def _clean(s: str) -> str:
+    return s.strip().replace(" ", "").replace("\u00a0", "")
+
+
+def _vote(s: str) -> str | None:
+    """'virgula' | 'ponto' se a célula decide o estilo; None se for ambígua (ex.: «1.234») ou um inteiro simples."""
+    t = _clean(s).lstrip("+-")
+    if not t or not re.fullmatch(r"[\d.,]+", t):
+        raise ParseError(f"Número inválido: {s!r}")
+    com, pon = "," in t, "." in t
+    if com and pon:  # o último separador é o decimal
+        return "virgula" if t.rfind(",") > t.rfind(".") else "ponto"
+    if not (com or pon):
+        return None
+    sep = "," if com else "."
+    if t.count(sep) > 1:  # separador repetido = milhares; o decimal (se existir) é o outro
+        return "ponto" if sep == "," else "virgula"
+    return ("virgula" if com else "ponto") if len(t.split(sep)[1]) in (1, 2) else None
+
+
+def detect_number_style(values: list[str]) -> str:
+    votes = {v for s in values if (v := _vote(s))}
+    if len(votes) > 1:
+        raise ParseError(
+            "Formato numérico inconsistente no ficheiro (mistura vírgula e ponto como separador decimal)."
+        )
+    if votes:
+        return votes.pop()
+    if any(re.search(r"[.,]", _clean(s)) for s in values):
+        raise ParseError(
+            "Não foi possível determinar o separador decimal (valores como «1.234» são ambíguos). "
+            "Exporte o ficheiro com casas decimais."
+        )
+    return "virgula"  # só inteiros simples: qualquer estilo dá o mesmo resultado
+
+
+def _parse_amount(s: str, style: str) -> Decimal:
+    t = _clean(s)
+    if not _STYLE_RE[style].match(t):
+        raise ParseError(f"Número inválido para o formato detetado ({style}): {s!r}")
+    t = t.replace(".", "").replace(",", ".") if style == "virgula" else t.replace(",", "")
+    return Decimal(t)
 
 
 def _rows(text: str) -> list[list[str]]:
@@ -90,7 +136,7 @@ class BankinterCsvParser:
             if periodo_inicio is None and (m := _PERIOD_RE.search(line)):
                 periodo_inicio, periodo_fim = _parse_date(m.group(1)), _parse_date(m.group(2))
 
-        raw: list[tuple[date, date | None, str, Decimal, Decimal]] = []
+        cells: list[tuple[date, date | None, str, str, str]] = []
         for lineno, r in enumerate(rows[h + 1 :], start=h + 2):
             if not r or not _DATE_RE.match(r[0].strip()):
                 break  # fim dos dados (linha em branco ou rodapé)
@@ -98,20 +144,28 @@ class BankinterCsvParser:
                 raise ParseError(f"Linha {lineno} com colunas a menos.")
             vd = r[idx["valor"]].strip()
             try:
-                raw.append(
+                cells.append(
                     (
                         _parse_date(r[idx["mov"]]),
                         _parse_date(vd) if _DATE_RE.match(vd) else None,
                         r[idx["desc"]].strip(),
-                        _parse_amount(r[idx["montante"]]),
-                        _parse_amount(r[idx["saldo"]]),
+                        r[idx["montante"]],
+                        r[idx["saldo"]],
                     )
                 )
             except ValueError as e:
                 raise ParseError(f"Linha {lineno}: {e}") from e
 
-        if not raw:
+        if not cells:
             raise ParseError("Nenhum movimento encontrado.")
+        style = detect_number_style([c[3] for c in cells] + [c[4] for c in cells])
+        try:
+            raw = [
+                (dm, dv, desc, _parse_amount(m, style), _parse_amount(sd, style))
+                for dm, dv, desc, m, sd in cells
+            ]
+        except ParseError as e:
+            raise ParseError(f"{e}") from e
 
         ordem, ambigua = detect_order([(r[3], r[4]) for r in raw])
         chrono = raw if ordem == "asc" else raw[::-1]
