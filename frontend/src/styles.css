@@ -66,12 +66,14 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; white-s
 .grid2 { display: grid; grid-template-columns: 1fr 1.3fr; gap: .75rem; }
 @media (max-width: 1000px) { .kpis { grid-template-columns: 1fr 1fr; } .hero { grid-column: 1 / -1; } }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } .hero-value { font-size: 2.4rem; } }
-.hbar-row { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr; align-items: center; gap: .6rem; padding: .2rem 0; }
+.hbar-row { display: grid; grid-template-columns: minmax(6rem, 10rem) 1fr auto; align-items: center; gap: .6rem; padding: .2rem 0; }
 .hbar-row.clickable { cursor: pointer; } .hbar-row.clickable:hover .hbar-label { color: var(--accent); }
 .hbar-label { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hbar-track { display: flex; align-items: center; gap: .5rem; }
+.hbar-track { display: flex; align-items: center; min-width: 0; }
 .hbar-fill { height: 16px; background: var(--s1); border-radius: 0 4px 4px 0; } .hbar-fill.muted { background: var(--muted); }
-.hbar-value { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hbar-value { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.hbar-pct { display: inline-block; min-width: 3.6rem; color: var(--ink-2); }
+@media (max-width: 700px) { .hbar-row { grid-template-columns: minmax(4.5rem, 7rem) 1fr auto; gap: .4rem; } .hbar-pct { min-width: 3.2rem; } }
 .tip-line { min-height: 1.4em; color: var(--ink-2); font-size: .85rem; margin-top: .4rem; }
 .chart-wrap { position: relative; }
 .chart-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .4rem; }

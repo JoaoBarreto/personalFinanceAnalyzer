@@ -22,6 +22,9 @@ export function CategoryBars({ items, onPick, max = 8 }: { items: CatItem[]; onP
     rows.push({ categoria_id: -1, nome: `Outros (${rest.length})`, total: fromCents(sum), n: rest.reduce((a, r) => a + r.n, 0), percentagem: null, folded: true });
   }
   const peak = Math.max(1, ...rows.map((r) => toCents(r.total)));
+  const sum = Math.max(1, rows.reduce((a, r) => a + toCents(r.total), 0));
+  // percentagem do total das despesas, com 1 casa decimal, calculada em cêntimos inteiros (as linhas somam 100 %)
+  const share = (c: number) => `${(Math.round((c * 1000) / sum) / 10).toFixed(1).replace(".", ",")}\u00a0%`;
   return (
     <div className="hbar" role="list" aria-label="Despesas por categoria">
       {rows.map((r) => {
@@ -40,8 +43,10 @@ export function CategoryBars({ items, onPick, max = 8 }: { items: CatItem[]; onP
               {r.nome}
             </div>
             <div className="hbar-track">
-              <div className={`hbar-fill${r.categoria_id === null ? " muted" : ""}`} style={{ width: `${Math.max(w * 0.8, 0.5)}%` }} />
-              <span className="hbar-value">{eur(r.total)}</span>
+              <div className={`hbar-fill${r.categoria_id === null ? " muted" : ""}`} style={{ width: `${Math.max(w, 0.5)}%` }} />
+            </div>
+            <div className="hbar-value">
+              {eur(r.total)} <span className="hbar-pct">{share(toCents(r.total))}</span>
             </div>
           </div>
         );
