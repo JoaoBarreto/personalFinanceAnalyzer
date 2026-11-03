@@ -13,7 +13,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Movimento, Regra
+from ..models import Categoria, Movimento, Regra
 
 SPECIFICITY = {"igual": 3, "comeca_por": 2, "contem": 1, "regex": 0}
 
@@ -127,12 +127,18 @@ def categorize(
     return dict(applied)
 
 
-def impact(db: Session, rule: RuleData) -> dict[str, int]:
-    """Movimentos não-manuais que a regra passaria a categorizar (manuais nunca entram na contagem)."""
+def impact(db: Session, rule: RuleData, linhas: int = 0) -> dict:
+    """Movimentos não-manuais que a regra passaria a categorizar (manuais nunca entram na contagem).
+
+    Com `linhas > 0` devolve também as primeiras `linhas` (para o utilizador as ver e validar antes de aplicar).
+    """
     others = [r for r in load_rules(db) if r.id != rule.id]
     candidates = others + [rule]
     afetados = conflitos = 0
+    out: list[dict] = []
+    nomes = {c.id: c.nome for c in db.scalars(select(Categoria))} if linhas else {}
     q = select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))
+    q = q.order_by(Movimento.data_movimento, Movimento.ordem_no_dia, Movimento.id)
     for m in db.scalars(q):
         w = best_rule(candidates, m.descricao_normalizada, m.montante, m.conta_id)
         if w is None or w is not rule:
@@ -140,6 +146,22 @@ def impact(db: Session, rule: RuleData) -> dict[str, int]:
         if (m.categoria_id, m.categoria_origem, m.regra_id) == (rule.categoria_id, "regra", rule.id):
             continue
         afetados += 1
-        if m.categoria_id is not None and m.categoria_id != rule.categoria_id:
-            conflitos += 1
-    return {"afetados": afetados, "conflitos": conflitos}
+        conflito = m.categoria_id is not None and m.categoria_id != rule.categoria_id
+        conflitos += conflito
+        if linhas and len(out) < linhas:
+            out.append(
+                {
+                    "id": m.id,
+                    "data_movimento": m.data_movimento,
+                    "descricao_original": m.descricao_original,
+                    "descricao_normalizada": m.descricao_normalizada,
+                    "montante": str(m.montante),
+                    "categoria_atual": nomes.get(m.categoria_id),
+                    "conflito": conflito,
+                }
+            )
+    res: dict = {"afetados": afetados, "conflitos": conflitos}
+    if linhas:
+        res["linhas"] = out
+        res["truncado"] = afetados > len(out)
+    return res

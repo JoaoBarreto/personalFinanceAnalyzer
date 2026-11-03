@@ -171,7 +171,8 @@ def _set_category(db: Session, movs: list[Movimento], categoria_id: int | None, 
 class LearnRule(BaseModel):
     padrao: str = Field(min_length=1)
     tipo_match: str = Field(default="contem", pattern="^(contem|comeca_por)$")
-    aplicar_retroativamente: bool = False
+    # Por omissão a regra aplica-se a TODOS os movimentos já importados (os manuais nunca são tocados)
+    aplicar_retroativamente: bool = True
 
 
 class BulkCategorize(BaseModel):
@@ -179,12 +180,19 @@ class BulkCategorize(BaseModel):
     descricao_normalizada: str | None = None  # alternativa: todos os movimentos com esta descrição
     categoria_id: int
     criar_regra: LearnRule | None = None
+    excluir_ids: list[
+        int
+    ] = []  # linhas que o utilizador desmarcou: ficam como estão (nem o grupo nem a regra lhes tocam)
 
     @model_validator(mode="after")
     def _one_selector(self):
         if (self.ids is None) == (self.descricao_normalizada is None):
             raise ValueError("indique ids ou descricao_normalizada (apenas um)")
         return self
+
+
+def _estado(m: Movimento) -> tuple:
+    return (m.categoria_id, m.categoria_origem, m.regra_id)
 
 
 @router.post("/bulk-categorize")
@@ -195,11 +203,25 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         if body.ids is not None
         else stmt.where(Movimento.descricao_normalizada == body.descricao_normalizada)
     )
-    movs = list(db.scalars(stmt))
+    excl = set(body.excluir_ids)
+    movs = [m for m in db.scalars(stmt) if m.id not in excl]
     if not movs:
         raise HTTPException(404, "Nenhum movimento encontrado")
+    retro = bool(body.criar_regra and body.criar_regra.aplicar_retroativamente)
+    candidatos = (
+        [
+            m
+            for m in db.scalars(
+                select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))
+            )
+            if m.id not in excl
+        ]
+        if retro
+        else []
+    )
+    antes = {m.id: _estado(m) for m in [*movs, *candidatos]}  # para a lista de alterações e para o «Desfazer»
     _set_category(db, movs, body.categoria_id, auth.utilizador.id)
-    out: dict = {"categorizados": len(movs), "regra": None, "impacto": None}
+    out: dict = {"categorizados": len(movs), "regra": None, "impacto": None, "aplicados": 0}
     if body.criar_regra:
         lr = body.criar_regra
         try:
@@ -219,10 +241,65 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         db.add(r)
         db.flush()
         out["regra"] = rule_out(r)
-        if lr.aplicar_retroativamente:
-            nao_manuais = db.scalars(
-                select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))
-            )
-            categorizer.categorize(db, list(nao_manuais), only_uncategorized=False)
+        if retro:
+            applied = categorizer.categorize(db, candidatos, only_uncategorized=False)
+            out["aplicados"] = sum(applied.values())  # outras linhas categorizadas pela nova regra
+    # tudo o que mudou, com o estado anterior (permite corrigir linha a linha e «Desfazer»)
+    por_id = {m.id: m for m in [*movs, *candidatos]}
+    nomes = {c.id: c.nome for c in db.scalars(select(Categoria))}
+    out["alteradas"] = [
+        {
+            "id": m.id,
+            "data_movimento": m.data_movimento,
+            "descricao_original": m.descricao_original,
+            "montante": str(m.montante),
+            "categoria_id": m.categoria_id,
+            "categoria_nome": nomes.get(m.categoria_id),
+            "do_grupo": m in movs,
+            "anterior": dict(zip(("categoria_id", "categoria_origem", "regra_id"), antes[m.id], strict=True)),
+        }
+        for m in sorted(por_id.values(), key=lambda m: (m.data_movimento, m.id))
+        if _estado(m) != antes[m.id]
+    ]
     db.commit()
     return out
+
+
+class RestoreItem(BaseModel):
+    id: int
+    categoria_id: int | None
+    categoria_origem: str | None = Field(default=None, pattern="^(regra|historico|fuzzy|ml|manual)$")
+    regra_id: int | None = None
+
+    @model_validator(mode="after")
+    def _par(self):
+        if (self.categoria_id is None) != (self.categoria_origem is None):
+            raise ValueError("categoria_id e categoria_origem têm de vir os dois ou nenhum")
+        return self
+
+
+class Restore(BaseModel):
+    itens: list[RestoreItem]
+    apagar_regra_id: int | None = None
+
+
+@router.post("/restore")
+def restore(body: Restore, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    """Desfaz uma categorização em lote: repõe o estado anterior e apaga a regra criada nessa ação."""
+    n = 0
+    for it in body.itens:
+        m = db.get(Movimento, it.id)
+        if m is None:
+            continue
+        if it.categoria_id is not None and db.get(Categoria, it.categoria_id) is None:
+            raise HTTPException(422, "Categoria anterior inexistente")
+        m.categoria_id, m.categoria_origem = it.categoria_id, it.categoria_origem
+        m.regra_id = it.regra_id if it.regra_id and db.get(Regra, it.regra_id) else None
+        m.atualizado_por = auth.utilizador.id
+        n += 1
+    apagada = False
+    if body.apagar_regra_id is not None and (r := db.get(Regra, body.apagar_regra_id)) is not None:
+        db.delete(r)
+        apagada = True
+    db.commit()
+    return {"restaurados": n, "regra_apagada": apagada}

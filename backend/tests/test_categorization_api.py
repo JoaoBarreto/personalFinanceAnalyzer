@@ -253,3 +253,152 @@ def test_palavra_chave_curta_e_422_e_nao_altera_nada(api, db):
     assert r.status_code == 422
     assert txs(api, q="SUPERMERCADO")["items"][0]["categoria_id"] is None  # nada foi gravado
     assert db.scalars(select(Regra)).all() == []
+
+
+def _variantes_continente(api):
+    rows = [
+        ("03-01-2026", "03-01-2026", "COMPRA 0000000.01 CONTINENTE MODELO LISBOA", D("-40.00")),
+        ("10-02-2026", "10-02-2026", "COMPRA 0000000.02 CONTINENTE BOM DIA LOURES", D("-25.50")),
+        ("15-03-2026", "15-03-2026", "COMPRA 0000000.03 CONTINENTE MODELO LISBOA", D("-31.00")),
+        ("20-04-2026", "20-04-2026", "COMPRA 0000000.04 PINGO DOCE ALFRAGIDE", D("-12.00")),
+    ]
+    import_all(api, rows)
+
+
+def test_categorizar_um_continente_categoriza_todas_as_variantes_do_ano(api, db):
+    _variantes_continente(api)
+    sup = cat_id(db, "Supermercado")
+    g = api.get("/api/transactions/uncategorized", params={"group_by": "description"}).json()["grupos"]
+    assert {x["descricao_normalizada"] for x in g} >= {
+        "CONTINENTE MODELO LISBOA",
+        "CONTINENTE BOM DIA LOURES",
+    }
+    r = api.post(  # sem indicar aplicar_retroativamente: o comportamento por omissão é aplicar a tudo
+        "/api/transactions/bulk-categorize",
+        json={
+            "descricao_normalizada": "CONTINENTE MODELO LISBOA",
+            "categoria_id": sup,
+            "criar_regra": {"padrao": "CONTINENTE"},
+        },
+    ).json()
+    assert r["categorizados"] == 2 and r["aplicados"] == 1  # 2 do grupo + 1 variante («BOM DIA LOURES»)
+    por_desc = {t["descricao_normalizada"]: t for t in txs(api)["items"]}
+    assert por_desc["CONTINENTE BOM DIA LOURES"]["categoria_id"] == sup
+    assert por_desc["CONTINENTE BOM DIA LOURES"]["categoria_origem"] == "regra"
+    assert por_desc["PINGO DOCE ALFRAGIDE"]["categoria_id"] is None  # o resto não é tocado
+    grupos = api.get("/api/transactions/uncategorized", params={"group_by": "description"}).json()["grupos"]
+    assert [x["descricao_normalizada"] for x in grupos if "CONTINENTE" in x["descricao_normalizada"]] == []
+
+
+def test_regra_nao_toca_em_categorizacoes_manuais_ao_aplicar_a_tudo(api, db):
+    _variantes_continente(api)
+    sup, alim = cat_id(db, "Supermercado"), cat_id(db, "Restaurantes")
+    tid = next(
+        t["id"] for t in txs(api)["items"] if t["descricao_normalizada"] == "CONTINENTE BOM DIA LOURES"
+    )
+    api.patch(f"/api/transactions/{tid}", json={"categoria_id": alim})  # escolha manual prévia
+    api.post(
+        "/api/transactions/bulk-categorize",
+        json={
+            "descricao_normalizada": "CONTINENTE MODELO LISBOA",
+            "categoria_id": sup,
+            "criar_regra": {"padrao": "CONTINENTE"},
+        },
+    )
+    t = next(t for t in txs(api)["items"] if t["id"] == tid)
+    assert t["categoria_id"] == alim and t["categoria_origem"] == "manual"
+
+
+def test_sem_aplicar_retroativamente_so_o_grupo(api, db):
+    _variantes_continente(api)
+    r = api.post(
+        "/api/transactions/bulk-categorize",
+        json={
+            "descricao_normalizada": "CONTINENTE MODELO LISBOA",
+            "categoria_id": cat_id(db, "Supermercado"),
+            "criar_regra": {"padrao": "CONTINENTE", "aplicar_retroativamente": False},
+        },
+    ).json()
+    assert r["categorizados"] == 2 and r["aplicados"] == 0
+
+
+def test_preview_mostra_as_linhas_que_vai_categorizar(api, db):
+    _variantes_continente(api)
+    body = {"padrao": "CONTINENTE", "categoria_id": cat_id(db, "Supermercado")}
+    sem = api.post("/api/rules/preview-impact", json=body).json()
+    assert sem["afetados"] == 3 and "linhas" not in sem  # compatível com o uso anterior
+    r = api.post("/api/rules/preview-impact", params={"linhas": 50}, json=body).json()
+    assert r["afetados"] == 3 and r["truncado"] is False
+    assert [x["descricao_normalizada"] for x in r["linhas"]] == [
+        "CONTINENTE MODELO LISBOA",
+        "CONTINENTE BOM DIA LOURES",
+        "CONTINENTE MODELO LISBOA",
+    ]  # por ordem de data; a original vem incluída para o utilizador a validar
+    assert r["linhas"][0]["montante"] == "-40.00" and r["linhas"][0]["categoria_atual"] is None
+    assert api.post("/api/rules/preview-impact", params={"linhas": 1}, json=body).json()["truncado"] is True
+
+
+def test_excluir_linhas_deixa_as_como_estao(api, db):
+    _variantes_continente(api)
+    sup = cat_id(db, "Supermercado")
+    todas = {t["id"]: t for t in txs(api)["items"]}
+    errada = next(i for i, t in todas.items() if t["descricao_normalizada"] == "CONTINENTE BOM DIA LOURES")
+    r = api.post(
+        "/api/transactions/bulk-categorize",
+        json={
+            "descricao_normalizada": "CONTINENTE MODELO LISBOA",
+            "categoria_id": sup,
+            "criar_regra": {"padrao": "CONTINENTE"},
+            "excluir_ids": [errada],
+        },
+    ).json()
+    assert r["aplicados"] == 0 and errada not in {x["id"] for x in r["alteradas"]}
+    assert next(t for t in txs(api)["items"] if t["id"] == errada)["categoria_id"] is None
+
+
+def test_lista_de_alteracoes_e_desfazer(api, db):
+    _variantes_continente(api)
+    sup, alim = cat_id(db, "Supermercado"), cat_id(db, "Restaurantes")
+    # uma regra anterior já categorizava a variante «BOM DIA LOURES» como Restaurantes (não manual)
+    api.post("/api/rules", json={"padrao": "BOM DIA", "categoria_id": alim})
+    api.post("/api/rules/apply")
+    r = api.post(
+        "/api/transactions/bulk-categorize",
+        json={
+            "descricao_normalizada": "CONTINENTE MODELO LISBOA",
+            "categoria_id": sup,
+            "criar_regra": {"padrao": "CONTINENTE", "aplicar_retroativamente": True},
+        },
+    ).json()
+    by_desc = {x["descricao_original"].split("0000000.")[1][3:]: x for x in r["alteradas"]}
+    assert {x["do_grupo"] for x in r["alteradas"]} == {True, False}
+    assert len(r["alteradas"]) == r["categorizados"] + r["aplicados"]
+    assert all(isinstance(x["montante"], str) for x in r["alteradas"])
+    loures = by_desc["CONTINENTE BOM DIA LOURES"]
+    assert loures["anterior"]["categoria_id"] == alim and loures["anterior"]["categoria_origem"] == "regra"
+
+    itens = [{"id": x["id"], **x["anterior"]} for x in r["alteradas"]]
+    d = api.post(
+        "/api/transactions/restore", json={"itens": itens, "apagar_regra_id": r["regra"]["id"]}
+    ).json()
+    assert d == {"restaurados": len(itens), "regra_apagada": True}
+    por_desc = {t["id"]: t for t in txs(api)["items"]}
+    assert por_desc[loures["id"]]["categoria_id"] == alim  # voltou à categoria que tinha
+    assert all(
+        por_desc[x["id"]]["categoria_id"] is None
+        for x in r["alteradas"]
+        if x["anterior"]["categoria_id"] is None
+    )
+    assert [x["padrao"] for x in api.get("/api/rules").json()] == ["BOM DIA"]  # só ficou a regra anterior
+
+
+def test_restore_valida_o_par_categoria_origem(api, db):
+    _variantes_continente(api)
+    tid = txs(api)["items"][0]["id"]
+    bad = api.post(
+        "/api/transactions/restore",
+        json={"itens": [{"id": tid, "categoria_id": 1, "categoria_origem": None}]},
+    )
+    assert bad.status_code == 422
+    ok = api.post("/api/transactions/restore", json={"itens": [{"id": 999999, "categoria_id": None}]})
+    assert ok.json()["restaurados"] == 0  # ids inexistentes são ignorados

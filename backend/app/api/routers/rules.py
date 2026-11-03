@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -153,9 +153,14 @@ def delete_rule(rule_id: int, _: Auth = Depends(require_auth), db: Session = Dep
 
 
 @router.post("/preview-impact")
-def preview_draft(body: RuleIn, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+def preview_draft(
+    body: RuleIn,
+    linhas: int = Query(0, ge=0, le=500),
+    _: Auth = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
     _check_refs(db, body.categoria_id, body.conta_id)
-    return categorizer.impact(db, draft(body))
+    return categorizer.impact(db, draft(body), linhas)
 
 
 @router.post("/{rule_id}/preview-impact")
