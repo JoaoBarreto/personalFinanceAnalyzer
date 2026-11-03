@@ -208,3 +208,11 @@ def test_previews_expiradas_sao_apagadas(api, db):
     db.expire_all()
     up(api, build_csv(ROWS[:4]))  # qualquer novo preview dispara a limpeza
     assert db.get(Importacao, old) is None
+
+
+def test_listar_importacoes(api):
+    a = confirm(api, up(api, build_csv(ROWS[:3])).json()["id"]).json()["id"]
+    up(api, build_csv())  # fica em preview
+    lst = api.get("/api/imports").json()
+    assert [i["estado"] for i in lst] == ["preview", "confirmada"] and lst[1]["id"] == a
+    assert lst[1]["n_movimentos"] == 3 and "staging" not in lst[1] and "linhas" not in lst[1]

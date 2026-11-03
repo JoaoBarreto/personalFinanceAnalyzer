@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down test test-db lint migrate create-user
+.PHONY: up down test test-db test-frontend lint migrate create-user
 up:
 	$(COMPOSE) up --build -d
 down:
@@ -18,3 +18,5 @@ test-db:  # testes com BD: Postgres descartável em Podman/Docker
 	cd backend && TEST_DATABASE_URL=postgresql+psycopg://pfa:t@127.0.0.1:55432/pfa .venv/bin/pytest -q; rc=$$?; $(or $(shell command -v docker),podman) rm -f pfa-test-db; exit $$rc
 create-user:  # make create-user USERNAME=joao NOME="João"   (não interativo: echo pw | make create-user ... EXEC=-T ARGS=--password-stdin)
 	$(COMPOSE) exec $(EXEC) backend python -m app.cli create-user $(USERNAME) --nome "$(NOME)" $(ARGS)
+test-frontend:  # typecheck + vitest num contentor node (não precisa de node local)
+	$(or $(shell command -v docker),podman) run --rm -v "$(CURDIR)/frontend":/app:Z -w /app docker.io/library/node:22-alpine sh -c "npm install --no-audit --no-fund && npm run typecheck && npm test"

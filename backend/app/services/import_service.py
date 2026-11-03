@@ -152,6 +152,25 @@ def _view(imp: Importacao, lines: list[dict[str, Any]] | None, avisos: list[str]
     }
 
 
+def list_imports(db: Session) -> list[dict[str, Any]]:
+    q = select(Importacao).where(Importacao.estado != "erro").order_by(Importacao.id.desc())
+    return [
+        {
+            "id": i.id,
+            "conta_id": i.conta_id,
+            "ficheiro_nome": i.ficheiro_nome,
+            "estado": i.estado,
+            "periodo_inicio": i.periodo_inicio,
+            "periodo_fim": i.periodo_fim,
+            "n_movimentos": i.n_movimentos,
+            "n_duplicados_ignorados": i.n_duplicados_ignorados,
+            "confirmada_em": i.confirmada_em,
+            "criada_em": i.criada_em,
+        }
+        for i in db.scalars(q)
+    ]
+
+
 def get_view(db: Session, imp_id: int) -> dict[str, Any]:
     imp = db.get(Importacao, imp_id)
     if imp is None:

@@ -14,7 +14,7 @@ Frontend: React + Vite + TypeScript. Backend: Python 3.12 + FastAPI + SQLAlchemy
 
 ## Desenvolvimento
 
-Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) `/api/health`, login (sessões, CSRF), contas e importação (preview, confirmação, reversão). Ainda não há regras de categorização nem frontend.
+Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) importação (preview, confirmação, reversão), regras e categorização, analytics e um frontend React (dashboard, movimentos, por categorizar, regras, importar).
 
 ```bash
 cp .env.example .env                      # preencher os valores
@@ -23,7 +23,8 @@ backend/.venv/bin/pip install -e "backend[dev]"
 make test                                 # pytest (parser, dedup; salta os testes com BD)
 make test-db                              # idem + testes com BD num Postgres descartável
 make lint                                 # ruff
-make up                                   # docker compose (backend + db); o frontend ainda não existe
+make up                                   # docker compose (db + backend + frontend em http://127.0.0.1:8080)
+make test-frontend                        # typecheck + vitest do frontend (num contentor node)
 make up COMPOSE="podman compose"          # em máquinas só com Podman (precisa de podman-compose no PATH)
 ```
 

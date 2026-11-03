@@ -35,6 +35,11 @@ def preview(
         _raise(e)
 
 
+@router.get("")
+def list_imports(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    return svc.list_imports(db)
+
+
 @router.get("/{imp_id}")
 def get_import(imp_id: int, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     try:

@@ -1,4 +1,4 @@
-# Serviço `frontend` entra no passo do dashboard. Sem portas do Postgres no host.
+# Sem portas do Postgres no host. O frontend (nginx) faz bind a 127.0.0.1; o acesso remoto é via `tailscale serve`.
 services:
   db:
     image: docker.io/library/postgres:16
@@ -30,6 +30,14 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8080:8080"
 
 volumes:
   pgdata:
