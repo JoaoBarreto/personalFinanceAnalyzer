@@ -40,3 +40,7 @@ backups/
 .vscode/
 .DS_Store
 *.log
+
+# Exports reais para testes locais (nunca no repositório)
+backend/tests/fixtures/local/
+*.csv

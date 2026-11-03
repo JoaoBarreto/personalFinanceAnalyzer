@@ -14,12 +14,21 @@ Frontend: React + Vite + TypeScript. Backend: Python 3.12 + FastAPI + SQLAlchemy
 
 ## Desenvolvimento
 
-Ainda sem código. Quando existir:
+Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) e `/api/health`. Ainda não há importação (preview/confirm), regras, login nem frontend.
 
 ```bash
-cp .env.example .env   # preencher os valores
-docker compose up
+cp .env.example .env                      # preencher os valores
+python3 -m venv backend/.venv
+backend/.venv/bin/pip install -e "backend[dev]"
+make test                                 # pytest (parser + reconciliação)
+make lint                                 # ruff
+make up                                   # docker compose (backend + db); o frontend ainda não existe
+make up COMPOSE="podman compose"          # em máquinas só com Podman (precisa de podman-compose no PATH)
 ```
+
+Migrações: `cd backend && DATABASE_URL=... .venv/bin/alembic upgrade head`. O contentor do backend corre-as ao arrancar.
+
+O `docker-compose.yml` foi testado com `podman-compose` (db + backend, migrações e seed aplicados, `/api/health` a responder). Com Docker propriamente dito não foi testado.
 
 ## Dados e privacidade
 
