@@ -1,5 +1,8 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
+import Footer from "./components/Footer";
+import Header from "./components/Header";
+import About from "./pages/About";
 import Accounts from "./pages/Accounts";
 import Categories from "./pages/Categories";
 import Dashboard from "./pages/Dashboard";
@@ -10,26 +13,12 @@ import Rules from "./pages/Rules";
 import Transactions from "./pages/Transactions";
 
 export default function App() {
-  const { user, ready, logout } = useAuth();
+  const { user, ready } = useAuth();
   if (!ready) return <p className="muted center">A carregar…</p>;
   if (!user) return <Login />;
   return (
-    <>
-      <header className="nav">
-        <strong className="brand">Finanças</strong>
-        <nav>
-          <NavLink to="/" end>Dashboard</NavLink>
-          <NavLink to="/movimentos">Movimentos</NavLink>
-          <NavLink to="/rever">Por categorizar</NavLink>
-          <NavLink to="/categorias">Categorias</NavLink>
-          <NavLink to="/regras">Regras</NavLink>
-          <NavLink to="/importar">Importar</NavLink>
-          <NavLink to="/contas">Contas</NavLink>
-        </nav>
-        <span className="spacer" />
-        <span className="muted">{user.nome}</span>
-        <button className="link" onClick={() => void logout()}>Sair</button>
-      </header>
+    <div className="app-shell">
+      <Header />
       <main>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -39,9 +28,11 @@ export default function App() {
           <Route path="/regras" element={<Rules />} />
           <Route path="/importar" element={<Import />} />
           <Route path="/contas" element={<Accounts />} />
+          <Route path="/sobre" element={<About />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-    </>
+      <Footer />
+    </div>
   );
 }
