@@ -14,17 +14,20 @@ Frontend: React + Vite + TypeScript. Backend: Python 3.12 + FastAPI + SQLAlchemy
 
 ## Desenvolvimento
 
-Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) e `/api/health`. Ainda não há importação (preview/confirm), regras, login nem frontend.
+Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) `/api/health` e login (sessões, CSRF). Ainda não há importação (preview/confirm), regras nem frontend.
 
 ```bash
 cp .env.example .env                      # preencher os valores
 python3 -m venv backend/.venv
 backend/.venv/bin/pip install -e "backend[dev]"
-make test                                 # pytest (parser + reconciliação)
+make test                                 # pytest (parser, dedup; salta os testes com BD)
+make test-db                              # idem + testes com BD num Postgres descartável
 make lint                                 # ruff
 make up                                   # docker compose (backend + db); o frontend ainda não existe
 make up COMPOSE="podman compose"          # em máquinas só com Podman (precisa de podman-compose no PATH)
 ```
+
+Primeiro utilizador: `make up` e depois `make create-user USERNAME=joao NOME="João"`. Em http sem TLS pôr `COOKIE_SECURE=false` no `.env` (com `tailscale serve` deixar `true`).
 
 Migrações: `cd backend && DATABASE_URL=... .venv/bin/alembic upgrade head`. O contentor do backend corre-as ao arrancar.
 

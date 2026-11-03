@@ -1,8 +1,16 @@
 """Fixture sintético: dados inventados com o mesmo layout do export Bankinter (sem dados pessoais)."""
 
+import os
 from decimal import Decimal as D
+from pathlib import Path
 
 import pytest
+
+# Testes com BD: definir TEST_DATABASE_URL (Postgres descartável). Tem de ser antes de importar `app`.
+TEST_DB = os.environ.get("TEST_DATABASE_URL")
+if TEST_DB:
+    os.environ["DATABASE_URL"] = TEST_DB
+os.environ.setdefault("COOKIE_SECURE", "false")
 
 # (data_movimento, data_valor, descricao, montante) em ordem cronológica
 ROWS = [
@@ -51,3 +59,41 @@ def build_csv() -> bytes:
 @pytest.fixture
 def content() -> bytes:
     return build_csv()
+
+
+@pytest.fixture(scope="session")
+def migrated_db():
+    if not TEST_DB:
+        pytest.skip("defina TEST_DATABASE_URL para os testes com BD")
+    from alembic.config import Config
+
+    from alembic import command
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    command.upgrade(cfg, "head")
+
+
+@pytest.fixture
+def db(migrated_db):
+    from sqlalchemy import text
+
+    from app import rate_limit
+    from app.db import SessionLocal
+
+    rate_limit.reset()
+    with SessionLocal() as s:
+        s.execute(text("TRUNCATE utilizadores RESTART IDENTITY CASCADE"))
+        s.commit()
+        yield s
+
+
+@pytest.fixture
+def client(db):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        yield c
