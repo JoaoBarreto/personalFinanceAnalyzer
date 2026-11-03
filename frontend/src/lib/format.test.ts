@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dataPt, eur, mesPt, pct } from "./format";
+import { dataPt, eur, mesCurto, mesPt, pct } from "./format";
 
 describe("format", () => {
   it("eur agrupa milhares e usa vírgula", () => {
@@ -19,6 +19,9 @@ describe("format", () => {
     expect(pct("73.39")).toBe("73,39 %");
     expect(dataPt("2026-10-05")).toBe("05/10/2026");
     expect(mesPt("2026-10")).toBe("out 2026");
+    expect(mesPt("2026")).toBe("2026"); // períodos anuais não podem dar «undefined»
+    expect(mesCurto("2026-03")).toBe("mar");
+    expect(mesCurto("2026")).toBe("2026");
   });
 });
 

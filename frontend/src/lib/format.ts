@@ -21,10 +21,16 @@ export function dataPt(iso: string | null | undefined): string {
 }
 
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-/** "2026-10" -> "out 2026" */
+/** "2026-10" -> "out 2026"; um ano ("2026") fica como está. */
 export function mesPt(ym: string): string {
   const [y, m] = ym.split("-");
-  return `${MESES[Number(m) - 1]} ${y}`;
+  return m ? `${MESES[Number(m) - 1]} ${y}` : y;
+}
+
+/** Só o mês, para cabeçalhos de colunas: "2026-10" -> "out". */
+export function mesCurto(ym: string): string {
+  const m = ym.split("-")[1];
+  return m ? MESES[Number(m) - 1] : ym;
 }
 
 /** "-12.34" -> -1234 (aritmética em cêntimos inteiros, nunca float para somar dinheiro). */

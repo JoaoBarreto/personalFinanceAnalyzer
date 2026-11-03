@@ -2,13 +2,14 @@ import { useState } from "react";
 import { eur, fromCents, mesPt, toCents } from "../lib/format";
 
 const MES_CURTO = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-function tickLabel(ym: string, first: boolean): string {
-  const [y, m] = ym.split("-");
+function tickLabel(p: string, first: boolean): string {
+  const [y, m] = p.split("-");
+  if (!m) return y; // período anual
   return first || m === "01" ? `${MES_CURTO[Number(m) - 1]} ${y}` : MES_CURTO[Number(m) - 1];
 }
 
 export type CatItem = { categoria_id: number | null; nome: string; total: string; n: number; percentagem: string | null };
-export type MonthItem = { mes: string; despesas: string; receitas: string; saldo_liquido: string };
+export type PeriodItem = { periodo: string; despesas: string; receitas: string; poupanca: string; saldo_fim: string | null };
 
 /** Barras horizontais por categoria: top N + "Outros"; valor na ponta; barra <= 16px, ponta de dados com 4px. */
 export function CategoryBars({ items, onPick, max = 8 }: { items: CatItem[]; onPick?: (id: number | null) => void; max?: number }) {
@@ -61,12 +62,12 @@ function niceMax(v: number): number {
 const axis = (c: number) => Math.round(c / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
 /** Receitas vs despesas (barras agrupadas, 1 eixo) + linha do saldo líquido. Legenda sempre visível. */
-export function MonthlyChart({ meses }: { meses: MonthItem[] }) {
+export function PeriodChart({ periodos: meses, titulo }: { periodos: PeriodItem[]; titulo: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const [table, setTable] = useState(false);
   const W = 720, H = 300, L = 56, R = 76, T = 16, B = 34;
   const iw = W - L - R, ih = H - T - B;
-  const vals = meses.flatMap((m) => [toCents(m.despesas), toCents(m.receitas), toCents(m.saldo_liquido)]);
+  const vals = meses.flatMap((m) => [toCents(m.despesas), toCents(m.receitas), toCents(m.poupanca)]);
   const top = niceMax(Math.max(0, ...vals));
   const bottom = Math.min(0, ...vals) < 0 ? -niceMax(-Math.min(...vals)) : 0;
   const y = (c: number) => T + ih - ((c - bottom) / (top - bottom)) * ih;
@@ -80,11 +81,11 @@ export function MonthlyChart({ meses }: { meses: MonthItem[] }) {
     const r = Math.min(4, h);
     return h === 0 ? "" : `M${cx},${y0} V${y1 + r} Q${cx},${y1} ${cx + r},${y1} H${cx + bw - r} Q${cx + bw},${y1} ${cx + bw},${y1 + r} V${y0} Z`;
   };
-  const has = (m: MonthItem) => toCents(m.receitas) !== 0 || toCents(m.despesas) !== 0;
+  const has = (m: PeriodItem) => toCents(m.receitas) !== 0 || toCents(m.despesas) !== 0;
   let line = "";
   meses.forEach((m, i) => {
     if (!has(m)) return;
-    line += `${i > 0 && has(meses[i - 1]) ? "L" : "M"}${x0(i)},${y(toCents(m.saldo_liquido))} `;
+    line += `${i > 0 && has(meses[i - 1]) ? "L" : "M"}${x0(i)},${y(toCents(m.poupanca))} `;
   });
   const lastIdx = meses.map(has).lastIndexOf(true);
   const last = lastIdx >= 0 ? meses[lastIdx] : undefined;
@@ -94,21 +95,21 @@ export function MonthlyChart({ meses }: { meses: MonthItem[] }) {
         <ul className="legend" aria-label="Legenda">
           <li><span className="sw s1" /> Receitas</li>
           <li><span className="sw s2" /> Despesas</li>
-          <li><span className="sw s3 line" /> Saldo líquido</li>
+          <li><span className="sw s3 line" /> Poupança</li>
         </ul>
         <button className="link" onClick={() => setTable(!table)}>{table ? "Ver gráfico" : "Ver tabela"}</button>
       </div>
       {table ? (
         <table className="data">
-          <thead><tr><th>Mês</th><th className="num">Receitas</th><th className="num">Despesas</th><th className="num">Saldo líquido</th></tr></thead>
+          <thead><tr><th>Período</th><th className="num">Receitas</th><th className="num">Despesas</th><th className="num">Poupança</th><th className="num">Saldo no fim</th></tr></thead>
           <tbody>
             {meses.map((m) => (
-              <tr key={m.mes}><td>{mesPt(m.mes)}</td><td className="num">{eur(m.receitas)}</td><td className="num">{eur(m.despesas)}</td><td className="num">{eur(m.saldo_liquido)}</td></tr>
+              <tr key={m.periodo}><td>{mesPt(m.periodo)}</td><td className="num">{eur(m.receitas)}</td><td className="num">{eur(m.despesas)}</td><td className="num">{eur(m.poupanca)}</td><td className="num">{eur(m.saldo_fim)}</td></tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Receitas, despesas e saldo líquido por mês" className="chart">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={titulo} className="chart">
           {ticks.map((t) => (
             <g key={t}>
               <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} className={t === 0 ? "baseline" : "grid"} />
@@ -116,29 +117,30 @@ export function MonthlyChart({ meses }: { meses: MonthItem[] }) {
             </g>
           ))}
           {meses.map((m, i) => (
-            <g key={m.mes}>
+            <g key={m.periodo}>
               <path d={bar(x0(i) - bw - gap / 2, toCents(m.receitas))} className="s1" />
               <path d={bar(x0(i) + gap / 2, toCents(m.despesas))} className="s2" />
-              <text x={x0(i)} y={H - 12} textAnchor="middle" className="axis-text">{tickLabel(m.mes, i === 0)}</text>
+              <text x={x0(i)} y={H - 12} textAnchor="middle" className="axis-text">{tickLabel(m.periodo, i === 0)}</text>
             </g>
           ))}
           <path d={line} className="net-line" fill="none" />
           {meses.map((m, i) => has(m) && (
-            <circle key={m.mes} cx={x0(i)} cy={y(toCents(m.saldo_liquido))} r={4} className="net-dot" />
+            <circle key={m.periodo} cx={x0(i)} cy={y(toCents(m.poupanca))} r={4} className="net-dot" />
           ))}
-          {last && <text x={x0(lastIdx) + 10} y={y(toCents(last.saldo_liquido)) + 4} className="end-label">{eur(last.saldo_liquido)}</text>}
+          {last && <text x={x0(lastIdx) + 10} y={y(toCents(last.poupanca)) + 4} className="end-label">{eur(last.poupanca)}</text>}
           {meses.map((m, i) => (
-            <rect key={m.mes} x={L + band * i} y={T} width={band} height={ih} fill="transparent"
+            <rect key={m.periodo} x={L + band * i} y={T} width={band} height={ih} fill="transparent"
               onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
           ))}
         </svg>
       )}
       {!table && hover !== null && (
         <div className="tooltip" style={{ left: `${(x0(hover) / W) * 100}%` }}>
-          <strong>{mesPt(meses[hover].mes)}</strong>
+          <strong>{mesPt(meses[hover].periodo)}</strong>
           <div>Receitas {eur(meses[hover].receitas)}</div>
           <div>Despesas {eur(meses[hover].despesas)}</div>
-          <div>Saldo {eur(meses[hover].saldo_liquido)}</div>
+          <div>Poupança {eur(meses[hover].poupanca)}</div>
+          <div>Saldo no fim {eur(meses[hover].saldo_fim)}</div>
         </div>
       )}
     </div>

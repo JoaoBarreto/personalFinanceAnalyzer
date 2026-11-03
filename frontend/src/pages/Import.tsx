@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, errorMessage, type Account } from "../api";
+import { CoverageSummary } from "../components/Coverage";
 import { useAsync } from "../hooks";
 import { dataPt, eur } from "../lib/format";
 
@@ -127,6 +128,7 @@ export default function Import() {
           </div>
         </>
       )}
+      <CoverageSummary />
       <h2>Importações anteriores</h2>
       <div className="card flush">
         <table className="data">

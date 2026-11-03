@@ -63,3 +63,8 @@ export type Tx = {
   montante: string; saldo_apos: string | null; categoria_id: number | null; categoria_nome: string | null;
   categoria_origem: string | null; notas: string | null; atualizado_por: number | null;
 };
+
+export type Coverage = {
+  conta_id: number; nome: string; primeiro: string | null; ultimo: string | null; n_movimentos: number;
+  falhas: { de: string; ate: string; diferenca: string }[]; ok: boolean;
+};
