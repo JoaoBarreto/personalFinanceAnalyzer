@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errorMessage, type Category, type Tx, type User } from "../api";
 import CategorySelect from "../components/CategorySelect";
 import TitularSelect from "../components/TitularSelect";
@@ -11,12 +11,16 @@ type Page = { total: number; page: number; page_size: number; items: Tx[] };
 export default function Transactions() {
   const [sp, setSp] = useSearchParams();
   const [q, setQ] = useState(sp.get("q") ?? "");
+  useEffect(() => setQ(sp.get("q") ?? ""), [sp]);
   const [err, setErr] = useState<string | null>(null);
   const page = Number(sp.get("page") ?? 1);
   const f = {
     q: sp.get("q") ?? "", titular: sp.get("titular") ?? "", categoria_id: sp.get("categoria_id") ?? "", sem_categoria: sp.get("sem_categoria") ?? "",
-    data_de: sp.get("data_de") ?? "", data_ate: sp.get("data_ate") ?? "", incluir_transferencias: sp.get("transf") ?? "true", page,
+    data_de: sp.get("data_de") ?? "", data_ate: sp.get("data_ate") ?? "", incluir_transferencias: sp.get("transf") ?? "true",
+    montante_max: sp.get("so_despesas") ? "-0.01" : "", page,
   };
+  const nav = useNavigate();
+  const fromDashboard = (useLocation().state as { from?: string } | null)?.from === "dashboard";
   const set = (k: string, v: string) => {
     const n = new URLSearchParams(sp);
     if (v) n.set(k, v); else n.delete(k);
@@ -35,6 +39,16 @@ export default function Transactions() {
       setErr(errorMessage(e));
     }
   };
+  const remove = (keys: string[]) => { const n = new URLSearchParams(sp); keys.forEach((k) => n.delete(k)); n.delete("page"); setSp(n); };
+  const catNome = cats.data?.find((c) => String(c.id) === f.categoria_id)?.nome;
+  const chips: { label: string; keys: string[] }[] = [
+    f.categoria_id ? { label: `Categoria: ${catNome ?? f.categoria_id}`, keys: ["categoria_id"] } : null,
+    f.sem_categoria ? { label: "Por categorizar", keys: ["sem_categoria"] } : null,
+    f.data_de || f.data_ate ? { label: `Período: ${f.data_de ? dataPt(f.data_de) : "…"} – ${f.data_ate ? dataPt(f.data_ate) : "…"}`, keys: ["data_de", "data_ate"] } : null,
+    sp.get("so_despesas") ? { label: "Só despesas", keys: ["so_despesas"] } : null,
+    sp.get("transf") === "false" ? { label: "Sem transferências", keys: ["transf"] } : null,
+    f.q ? { label: `Pesquisa: ${f.q}`, keys: ["q"] } : null,
+  ].filter((x): x is { label: string; keys: string[] } => x !== null);
   const pages = list.data ? Math.max(1, Math.ceil(list.data.total / list.data.page_size)) : 1;
   return (
     <>
@@ -52,6 +66,15 @@ export default function Transactions() {
         )}
         <label className="check"><input type="checkbox" checked={f.sem_categoria === "true"} onChange={(e) => set("sem_categoria", e.target.checked ? "true" : "")} /> Por categorizar</label>
       </div>
+      {chips.length > 0 && (
+        <div className="chips" aria-label="Filtros ativos">
+          {fromDashboard && <button className="link" onClick={() => nav(-1)}>← Voltar ao dashboard</button>}
+          {chips.map((c) => (
+            <button key={c.label} className="chip" onClick={() => remove(c.keys)} title="Remover este filtro">{c.label} ×</button>
+          ))}
+          <button className="link" onClick={() => setSp(new URLSearchParams())}>Limpar filtros</button>
+        </div>
+      )}
       {(err || list.error) && <p className="error" role="alert">{err ?? list.error}</p>}
       <div className="card flush">
         <table className="data tx">

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Coverage } from "../api";
 import CategoryMatrix, { type Matrix } from "../components/CategoryMatrix";
 import { CategoryBars, PeriodChart, type CatItem, type PeriodItem } from "../components/charts";
@@ -35,11 +34,20 @@ function Delta({ v, upIsGood, label }: { v: string | null; upIsGood: boolean; la
 }
 
 export default function Dashboard() {
-  const [modo, setModo] = useState<"mes" | "ano">("mes");
-  const [mes, setMes] = useState("");
-  const [ano, setAno] = useState("");
-  const [transf, setTransf] = useState(false);
-  const [titular, setTitular] = useState("");
+  // O estado vive no endereço: «Voltar» do browser e recarregar mantêm o período, o modo e os filtros.
+  const [sp, setSp] = useSearchParams();
+  const modo: "mes" | "ano" = sp.get("modo") === "ano" ? "ano" : "mes";
+  const mes = sp.get("mes") ?? "";
+  const ano = sp.get("ano") ?? "";
+  const transf = sp.get("transf") === "true";
+  const titular = sp.get("titular") ?? "";
+  const setParam = (k: string, v: string) =>
+    setSp((prev) => { const n = new URLSearchParams(prev); if (v) n.set(k, v); else n.delete(k); return n; }, { replace: true });
+  const setModo = (m: "mes" | "ano") => setParam("modo", m === "ano" ? "ano" : "");
+  const setMes = (v: string) => setParam("mes", v);
+  const setAno = (v: string) => setParam("ano", v);
+  const setTransf = (v: boolean) => setParam("transf", v ? "true" : "");
+  const setTitular = (v: string) => setParam("titular", v);
   const nav = useNavigate();
 
   // O período por omissão é o do último movimento importado (e não o mês corrente, que pode estar vazio).
@@ -69,6 +77,19 @@ export default function Dashboard() {
   );
 
   const s = summary.data;
+  const step = (d: number) => {
+    if (modo === "ano") setAno(String(Number(anoEf) + d));
+    else { const [y, m] = mesEf.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); setMes(`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`); }
+  };
+  // Clicar numa barra abre os movimentos desse mesmo período e filtros (os totais têm de bater com a barra).
+  const drill = (id: number | null) => {
+    const q = new URLSearchParams({ transf: String(transf), so_despesas: "1" });
+    const per = params as { data_de?: string; data_ate?: string };
+    if (per.data_de && per.data_ate) { q.set("data_de", per.data_de); q.set("data_ate", per.data_ate); }
+    if (titular) q.set("titular", titular);
+    if (id === null) q.set("sem_categoria", "true"); else q.set("categoria_id", String(id));
+    nav(`/movimentos?${q}`, { state: { from: "dashboard" } });
+  };
   const anterior = modo === "ano" ? "ano anterior" : "mês anterior";
   return (
     <>
@@ -78,11 +99,15 @@ export default function Dashboard() {
           <button className={modo === "mes" ? "on" : ""} aria-pressed={modo === "mes"} onClick={() => setModo("mes")}>Mês</button>
           <button className={modo === "ano" ? "on" : ""} aria-pressed={modo === "ano"} onClick={() => setModo("ano")}>Ano</button>
         </div>
-        {modo === "mes" ? (
-          <label>Mês <input type="month" value={mesEf} onChange={(e) => setMes(e.target.value)} /></label>
-        ) : (
-          <label>Ano <input type="number" min={2000} max={2100} value={anoEf} onChange={(e) => setAno(e.target.value)} style={{ width: "6rem" }} /></label>
-        )}
+        <div className="stepper">
+          <button onClick={() => step(-1)} aria-label={modo === "ano" ? "Ano anterior" : "Mês anterior"} disabled={!ym}>‹</button>
+          {modo === "mes" ? (
+            <input type="month" aria-label="Mês" value={mesEf} onChange={(e) => setMes(e.target.value)} />
+          ) : (
+            <input type="number" aria-label="Ano" min={2000} max={2100} value={anoEf} onChange={(e) => setAno(e.target.value)} style={{ width: "6rem" }} />
+          )}
+          <button onClick={() => step(1)} aria-label={modo === "ano" ? "Ano seguinte" : "Mês seguinte"} disabled={!ym}>›</button>
+        </div>
         <TitularSelect value={titular} onChange={setTitular} />
         <label className="check"><input type="checkbox" checked={transf} onChange={(e) => setTransf(e.target.checked)} /> Incluir transferências</label>
         {s && s.n_por_categorizar > 0 && <Link className="badge warn" to="/rever">{s.n_por_categorizar} por categorizar</Link>}
@@ -132,7 +157,7 @@ export default function Dashboard() {
           <h2>Despesas por categoria</h2>
           {cats.data && cats.data.itens.length === 0 && <p className="muted">Sem despesas neste período.</p>}
           {cats.data && cats.data.itens.length > 0 && (
-            <CategoryBars items={cats.data.itens} onPick={(id) => nav(id === null ? "/rever" : `/movimentos?categoria_id=${id}`)} />
+            <CategoryBars items={cats.data.itens} onPick={drill} />
           )}
         </section>
         <section className="card">

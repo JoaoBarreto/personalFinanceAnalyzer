@@ -73,7 +73,7 @@ export default function Review() {
   return (
     <>
       <div className="toolbar"><h1>Por categorizar</h1>{groups.data && <span className="badge">{groups.data.total} movimentos · {groups.data.grupos.length} grupos</span>}</div>
-      {msg && <p className="ok" role="status">{msg}</p>}
+      {msg && <p className="ok sticky" role="status">{msg}</p>}
       {groups.error && <p className="error">{groups.error}</p>}
       {groups.data?.grupos.length === 0 && <p className="card muted">Tudo categorizado. 🎉</p>}
       {cats.data && groups.data?.grupos.map((g) => (
