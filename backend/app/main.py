@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from .api.routers import accounts, analytics, auth, categories, imports, rules, transactions
+from .api.routers import accounts, analytics, auth, categories, imports, rules, transactions, users
 from .config import ENABLE_DOCS
 
 app = FastAPI(
@@ -16,6 +16,7 @@ app.include_router(categories.router)
 app.include_router(rules.router)
 app.include_router(transactions.router)
 app.include_router(analytics.router)
+app.include_router(users.router)
 
 
 @app.get("/api/health")

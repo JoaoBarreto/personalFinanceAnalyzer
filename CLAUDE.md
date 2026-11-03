@@ -12,7 +12,9 @@ Importação feita: normalizador (`services/normalizer.py`), `/api/accounts`, `/
 Categorização feita: `services/categorizer.py` (regras: contem/comeca_por/igual/regex, direção, montante, conta, desempate do PRD 3.5; depois histórico exato; manual nunca sobrescrito), chamada no confirm da importação. APIs: `/api/categories`, `/api/rules` (+`preview-impact`, `apply`), `/api/transactions` (filtros, paginação, `uncategorized?group_by=description`, `PATCH`, `bulk-categorize` com `criar_regra` = aprendizagem).
 Analytics feito: `/api/analytics/summary|by-category|monthly` (transferências fora dos totais por omissão; despesa = montante<0).
 Frontend feito (`frontend/`: React 19 + Vite + TS, CSS próprio, gráficos em SVG/HTML sem libs; páginas Dashboard, Movimentos, Por categorizar, Regras, Importar; nginx faz proxy de `/api` e serve a SPA). Paleta validada com o skill dataviz (slots 1–3, claro e escuro). `make test-frontend` corre typecheck + vitest num contentor (sem node local); o compose corre com `podman-compose`. Validado a ver a UI com Chromium headless num contentor (capturas e interações), não há testes automáticos de UI.
-Por fazer: deploy no mini-PC (Docker real + `tailscale serve`), backup (só quando a release estiver estável), parser XLSX se o Bankinter o exportar, e a segunda utilizadora (CSV anonimizado dela). Fase 2: fuzzy/ML, splits, tags, deteção de transferências.
+Dois utilizadores feito: contas com `titular_id` (None = conjunta), `GET /api/users`, `PATCH /api/accounts/{id}`, filtro `titular` (id ou `conjunta`) em movimentos e analytics (`api/scope.py`), `atualizado_por` nos movimentos, página Contas e seletor de titular na UI. Ambos os utilizadores veem os mesmos dados (sem papéis).
+Deploy no mini-PC feito (Docker real + `tailscale serve`, 443→8080).
+Por fazer: CSV anonimizado da esposa (confirmar se o layout é igual ao do Bankinter; senão adaptar parser/mapeamento), backup (só quando a release estiver estável), parser XLSX se o Bankinter o exportar, UI em ecrãs pequenos (não verificada). Fase 2: fuzzy/ML, splits, tags, deteção de transferências.
 
 ## Commands
 

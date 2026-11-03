@@ -10,6 +10,7 @@ from ...deps import Auth, get_db, require_auth
 from ...models import Categoria, Movimento, Regra
 from ...services import categorizer
 from ...services.normalizer import normalize_pattern, suggest_keyword
+from ..scope import scope_conds
 from .rules import RuleIn, draft, rule_out
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
@@ -30,6 +31,7 @@ def _out(m: Movimento, cat: Categoria | None) -> dict:
         "categoria_origem": m.categoria_origem,
         "regra_id": m.regra_id,
         "notas": m.notas,
+        "atualizado_por": m.atualizado_por,
         "importacao_id": m.importacao_id,
     }
 
@@ -43,6 +45,7 @@ def list_transactions(
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
     conta_id: int | None = None,
+    titular: str | None = None,
     categoria_id: int | None = None,
     sem_categoria: bool = False,
     data_de: date | None = None,
@@ -55,8 +58,7 @@ def list_transactions(
     page_size: int = Query(50, ge=1, le=200),
 ):
     stmt = select(Movimento, Categoria).outerjoin(Categoria, Categoria.id == Movimento.categoria_id)
-    if conta_id is not None:
-        stmt = stmt.where(Movimento.conta_id == conta_id)
+    stmt = stmt.where(*scope_conds(conta_id, titular))
     if sem_categoria:
         stmt = stmt.where(Movimento.categoria_id.is_(None))
     elif categoria_id is not None:

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, errorMessage, type Category, type Tx } from "../api";
+import { api, errorMessage, type Category, type Tx, type User } from "../api";
 import CategorySelect from "../components/CategorySelect";
+import TitularSelect from "../components/TitularSelect";
 import { useAsync } from "../hooks";
 import { dataPt, eur } from "../lib/format";
 
@@ -13,7 +14,7 @@ export default function Transactions() {
   const [err, setErr] = useState<string | null>(null);
   const page = Number(sp.get("page") ?? 1);
   const f = {
-    q: sp.get("q") ?? "", categoria_id: sp.get("categoria_id") ?? "", sem_categoria: sp.get("sem_categoria") ?? "",
+    q: sp.get("q") ?? "", titular: sp.get("titular") ?? "", categoria_id: sp.get("categoria_id") ?? "", sem_categoria: sp.get("sem_categoria") ?? "",
     data_de: sp.get("data_de") ?? "", data_ate: sp.get("data_ate") ?? "", incluir_transferencias: sp.get("transf") ?? "true", page,
   };
   const set = (k: string, v: string) => {
@@ -23,6 +24,8 @@ export default function Transactions() {
     setSp(n);
   };
   const cats = useAsync(() => api.get<Category[]>("/api/categories"), []);
+  const users = useAsync(() => api.get<User[]>("/api/users"), []);
+  const nomeDe = (id: number | null) => users.data?.find((u) => u.id === id)?.nome;
   const list = useAsync(() => api.get<Page>("/api/transactions", { ...f, page_size: 50 }), [sp.toString()]);
   const setCat = async (t: Tx, id: number | null) => {
     try {
@@ -40,6 +43,7 @@ export default function Transactions() {
         <form onSubmit={(e) => { e.preventDefault(); set("q", q); }}>
           <input type="search" placeholder="Pesquisar…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Pesquisar" />
         </form>
+        <TitularSelect value={f.titular} onChange={(v) => set("titular", v)} />
         <label>De <input type="date" value={f.data_de} onChange={(e) => set("data_de", e.target.value)} /></label>
         <label>Até <input type="date" value={f.data_ate} onChange={(e) => set("data_ate", e.target.value)} /></label>
         {cats.data && (
@@ -56,7 +60,7 @@ export default function Transactions() {
             {list.data?.items.map((t) => (
               <tr key={t.id}>
                 <td>{dataPt(t.data_movimento)}</td>
-                <td title={t.descricao_original}>{t.descricao_normalizada}{t.categoria_origem === "manual" && <span className="tag" title="Categorizado manualmente">manual</span>}</td>
+                <td title={t.descricao_original}>{t.descricao_normalizada}{t.categoria_origem === "manual" && <span className="tag" title={`Categorizado manualmente${nomeDe(t.atualizado_por) ? ` por ${nomeDe(t.atualizado_por)}` : ""}`}>manual</span>}</td>
                 <td>{cats.data && <CategorySelect aria-label={`Categoria de ${t.descricao_normalizada}`} categories={cats.data} value={t.categoria_id} onChange={(id) => setCat(t, id)} />}</td>
                 <td className={`num ${t.montante.startsWith("-") ? "neg" : "pos"}`}>{eur(t.montante)}</td>
                 <td className="num muted">{eur(t.saldo_apos)}</td>

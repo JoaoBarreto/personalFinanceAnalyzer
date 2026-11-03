@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
+import Accounts from "./pages/Accounts";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
 import Login from "./pages/Login";
@@ -21,6 +22,7 @@ export default function App() {
           <NavLink to="/rever">Por categorizar</NavLink>
           <NavLink to="/regras">Regras</NavLink>
           <NavLink to="/importar">Importar</NavLink>
+          <NavLink to="/contas">Contas</NavLink>
         </nav>
         <span className="spacer" />
         <span className="muted">{user.nome}</span>
@@ -33,6 +35,7 @@ export default function App() {
           <Route path="/rever" element={<Review />} />
           <Route path="/regras" element={<Rules />} />
           <Route path="/importar" element={<Import />} />
+          <Route path="/contas" element={<Accounts />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

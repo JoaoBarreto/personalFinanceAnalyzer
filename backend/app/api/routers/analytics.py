@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
 from ...models import Categoria, Movimento
+from ..scope import scope_conds
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -22,10 +23,8 @@ DESPESA = func.coalesce(func.sum(case((Movimento.montante < 0, -Movimento.montan
 RECEITA = func.coalesce(func.sum(case((Movimento.montante > 0, Movimento.montante), else_=0)), 0)
 
 
-def _filters(conta_id, incluir_transferencias, d0=None, d1=None):
-    conds = []
-    if conta_id is not None:
-        conds.append(Movimento.conta_id == conta_id)
+def _filters(scope, incluir_transferencias, d0=None, d1=None):
+    conds = list(scope)
     if d0:
         conds.append(Movimento.data_movimento >= d0)
     if d1:
@@ -39,8 +38,8 @@ def _base(*cols):
     return select(*cols).select_from(Movimento).outerjoin(Categoria, Categoria.id == Movimento.categoria_id)
 
 
-def _totals(db: Session, conta_id, incl, d0, d1) -> tuple[Decimal, Decimal]:
-    r = db.execute(_base(DESPESA, RECEITA).where(*_filters(conta_id, incl, d0, d1))).one()
+def _totals(db: Session, scope, incl, d0, d1) -> tuple[Decimal, Decimal]:
+    r = db.execute(_base(DESPESA, RECEITA).where(*_filters(scope, incl, d0, d1))).one()
     return Decimal(r[0]), Decimal(r[1])
 
 
@@ -73,16 +72,12 @@ def _previous(d0: date, d1: date) -> tuple[date, date]:
     return d0 - timedelta(days=n), d0 - timedelta(days=1)
 
 
-def _avg_monthly(db: Session, conta_id, incl, d0: date, n: int):
+def _avg_monthly(db: Session, scope, incl, d0: date, n: int):
     """Média mensal dos até n meses completos anteriores ao mês de d0, só desde o 1.º movimento.
 
     Devolve None quando não há nenhum mês completo com histórico (em vez de dividir por meses inexistentes).
     """
-    first = db.scalar(
-        select(func.min(Movimento.data_movimento)).where(
-            *([Movimento.conta_id == conta_id] if conta_id else [])
-        )
-    )
+    first = db.scalar(select(func.min(Movimento.data_movimento)).where(*scope))
     if first is None:
         return None
     cur = d0.replace(day=1)
@@ -90,7 +85,7 @@ def _avg_monthly(db: Session, conta_id, incl, d0: date, n: int):
     months = (cur.year * 12 + cur.month) - (start.year * 12 + start.month)
     if months <= 0:
         return None
-    desp, rec = _totals(db, conta_id, incl, start, cur - timedelta(days=1))
+    desp, rec = _totals(db, scope, incl, start, cur - timedelta(days=1))
     return desp / months, rec / months
 
 
@@ -103,17 +98,19 @@ def summary(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
+    titular: str | None = None,
     incluir_transferencias: bool = False,
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
+    scope = scope_conds(conta_id, titular)
     d0, d1 = _period(db, data_de, data_ate)
-    desp, rec = _totals(db, conta_id, incluir_transferencias, d0, d1)
+    desp, rec = _totals(db, scope, incluir_transferencias, d0, d1)
     p0, p1 = _previous(d0, d1)
-    pdesp, prec = _totals(db, conta_id, incluir_transferencias, p0, p1)
+    pdesp, prec = _totals(db, scope, incluir_transferencias, p0, p1)
     medias = {}
     for n in (6, 12):
-        avg = _avg_monthly(db, conta_id, incluir_transferencias, d0, n)
+        avg = _avg_monthly(db, scope, incluir_transferencias, d0, n)
         medias[f"media_{n}m"] = (
             {"despesas": None, "receitas": None, "variacao_despesas_pct": None}
             if avg is None
@@ -145,18 +142,20 @@ def by_category(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
+    titular: str | None = None,
     incluir_transferencias: bool = False,
     nivel: str = Query("filho", pattern="^(filho|pai)$"),
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
+    scope = scope_conds(conta_id, titular)
     d0, d1 = _period(db, data_de, data_ate)
     group_id = (
         func.coalesce(Categoria.parent_id, Categoria.id) if nivel == "pai" else Categoria.id
     )  # pai: sobe ao pai
     stmt = (
         _base(group_id, func.sum(-Movimento.montante), func.count())
-        .where(Movimento.montante < 0, *_filters(conta_id, incluir_transferencias, d0, d1))
+        .where(Movimento.montante < 0, *_filters(scope, incluir_transferencias, d0, d1))
         .group_by(group_id)
     )
     rows = db.execute(stmt).all()
@@ -183,10 +182,12 @@ def monthly(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
+    titular: str | None = None,
     incluir_transferencias: bool = False,
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
+    scope = scope_conds(conta_id, titular)
     if not data_ate:
         data_ate = db.scalar(select(func.max(Movimento.data_movimento))) or date.today()
     if not data_de:
@@ -194,7 +195,7 @@ def monthly(
     mes = func.date_trunc("month", Movimento.data_movimento)
     rows = db.execute(
         _base(mes, DESPESA, RECEITA)
-        .where(*_filters(conta_id, incluir_transferencias, data_de, data_ate))
+        .where(*_filters(scope, incluir_transferencias, data_de, data_ate))
         .group_by(mes)
         .order_by(mes)
     ).all()

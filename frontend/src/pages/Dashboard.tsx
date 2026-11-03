@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { CategoryBars, MonthlyChart, type CatItem, type MonthItem } from "../components/charts";
+import TitularSelect from "../components/TitularSelect";
 import { useAsync } from "../hooks";
 import { eur, pct } from "../lib/format";
 
@@ -33,14 +34,15 @@ function Delta({ v, upIsGood, label }: { v: string | null; upIsGood: boolean; la
 export default function Dashboard() {
   const [mes, setMes] = useState("");
   const [transf, setTransf] = useState(false);
+  const [titular, setTitular] = useState("");
   const nav = useNavigate();
   const params = mes ? { data_de: `${mes}-01`, data_ate: lastDay(mes) } : {};
-  const common = { ...params, incluir_transferencias: transf };
-  const summary = useAsync(() => api.get<Summary>("/api/analytics/summary", common), [mes, transf]);
-  const cats = useAsync(() => api.get<{ itens: CatItem[] }>("/api/analytics/by-category", common), [mes, transf]);
+  const common = { ...params, incluir_transferencias: transf, titular };
+  const summary = useAsync(() => api.get<Summary>("/api/analytics/summary", common), [mes, transf, titular]);
+  const cats = useAsync(() => api.get<{ itens: CatItem[] }>("/api/analytics/by-category", common), [mes, transf, titular]);
   const monthly = useAsync(
-    () => api.get<{ meses: MonthItem[] }>("/api/analytics/monthly", { incluir_transferencias: transf, data_ate: params.data_ate }),
-    [mes, transf],
+    () => api.get<{ meses: MonthItem[] }>("/api/analytics/monthly", { incluir_transferencias: transf, data_ate: params.data_ate, titular }),
+    [mes, transf, titular],
   );
   const s = summary.data;
   return (
@@ -48,6 +50,7 @@ export default function Dashboard() {
       <div className="toolbar">
         <h1>Dashboard</h1>
         <label>Mês <input type="month" value={mes || (s?.periodo.data_de.slice(0, 7) ?? "")} onChange={(e) => setMes(e.target.value)} /></label>
+        <TitularSelect value={titular} onChange={setTitular} />
         <label className="check"><input type="checkbox" checked={transf} onChange={(e) => setTransf(e.target.checked)} /> Incluir transferências</label>
         {s && s.n_por_categorizar > 0 && <Link className="badge warn" to="/rever">{s.n_por_categorizar} por categorizar</Link>}
       </div>
