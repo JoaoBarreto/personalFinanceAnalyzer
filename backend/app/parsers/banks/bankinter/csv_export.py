@@ -113,7 +113,7 @@ class BankinterCsvParser:
         if not raw:
             raise ParseError("Nenhum movimento encontrado.")
 
-        ordem, _ambiguo = detect_order([(r[3], r[4]) for r in raw])
+        ordem, ambigua = detect_order([(r[3], r[4]) for r in raw])
         chrono = raw if ordem == "asc" else raw[::-1]
 
         movimentos: list[ParsedMovement] = []
@@ -128,6 +128,7 @@ class BankinterCsvParser:
             periodo_inicio=periodo_inicio or movimentos[0].data_movimento,
             periodo_fim=periodo_fim or movimentos[-1].data_movimento,
             ordem_ficheiro=ordem,
+            ordem_ambigua=ambigua,
             saldo_inicial=chrono[0][4] - chrono[0][3],
             saldo_final=chrono[-1][4],
             movimentos=movimentos,

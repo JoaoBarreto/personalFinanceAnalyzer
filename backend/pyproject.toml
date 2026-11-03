@@ -14,6 +14,8 @@ dependencies = [
     "pydantic>=2",
     "argon2-cffi",
     "uvicorn",
+    "python-multipart",
+    "unidecode",
 ]
 
 [project.optional-dependencies]
@@ -30,4 +32,4 @@ testpaths = ["tests"]
 line-length = 110
 
 [tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["fastapi.Depends"]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form"]

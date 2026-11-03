@@ -8,7 +8,8 @@ Spec: `PersonalFinances.md` (PRD). MVP só para um utilizador (Bankinter); segun
 
 Feito: parser Bankinter CSV + reconciliação (`backend/app/parsers/`), dedup pura (`backend/app/services/dedup.py`), modelos e migrações `0001` (esquema) e `0002` (seed de categorias PT), `/api/health`, Dockerfile e `docker-compose.yml`.
 Login feito: `/api/auth/login|logout|me`, sessão no servidor (só o sha256 do token na BD), CSRF por `X-CSRF-Token` em pedidos não-GET, rate limit em memória, `require_auth` em `backend/app/deps.py` (usar em todos os routers novos), CLI `python -m app.cli create-user` (`--password-stdin` para uso não interativo). `tests/test_route_guard.py` percorre `app.openapi()` e exige 401 em todas as rotas novas (exceto health/login). `/docs` e `/openapi.json` estão desligados (`ENABLE_DOCS=true` liga). A URL da BD vem de `POSTGRES_*` (`DATABASE_URL` é override opcional).
-Por fazer (por esta ordem): import_service (preview/confirm/reversão, ligando parser + dedup à BD), normalizador, regras, frontend. A flag de ordem ambígua de `detect_order` ainda não é guardada.
+Importação feita: normalizador (`services/normalizer.py`), `/api/accounts`, `/api/imports/preview|{id}|{id}/confirm|DELETE {id}` (`services/import_service.py`: staging com Decimals em string, reconciliação em todas as linhas após correções, re-dedup no confirm, possíveis duplicados só gravados se listados em `incluir_possiveis_duplicados`, reversão bloqueada por importação posterior sobreposta). Migração `0003` (`ordem_ambigua`). Dinheiro na API vai sempre como string (o encoder do FastAPI converte `Decimal` de dicts em float, por isso `_s()`).
+Por fazer (por esta ordem): motor de regras + categorização no confirm (hoje `categoria_id` fica NULL), ecrã Por Categorizar, endpoints de movimentos e analytics, frontend (React/Vite), parser XLSX se o Bankinter o exportar.
 
 ## Commands
 

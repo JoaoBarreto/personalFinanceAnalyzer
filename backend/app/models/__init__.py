@@ -80,6 +80,7 @@ class Importacao(Base):
     reconciliado: Mapped[bool | None] = mapped_column(Boolean)
     diferenca: Mapped[Decimal | None] = mapped_column(MONEY)
     ordem_ficheiro: Mapped[str | None] = mapped_column(Text)
+    ordem_ambigua: Mapped[bool | None] = mapped_column(Boolean)
     n_linhas_ficheiro: Mapped[int] = mapped_column(Integer, server_default="0")
     n_movimentos: Mapped[int] = mapped_column(Integer, server_default="0")
     n_duplicados_ignorados: Mapped[int] = mapped_column(Integer, server_default="0")

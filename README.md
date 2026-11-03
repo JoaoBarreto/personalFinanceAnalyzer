@@ -14,7 +14,7 @@ Frontend: React + Vite + TypeScript. Backend: Python 3.12 + FastAPI + SQLAlchemy
 
 ## Desenvolvimento
 
-Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) `/api/health` e login (sessões, CSRF). Ainda não há importação (preview/confirm), regras nem frontend.
+Estado atual: parser Bankinter CSV (com reconciliação por cadeia de saldos), deduplicação (função pura), modelos SQLAlchemy, migrações (esquema + seed de categorias) `/api/health`, login (sessões, CSRF), contas e importação (preview, confirmação, reversão). Ainda não há regras de categorização nem frontend.
 
 ```bash
 cp .env.example .env                      # preencher os valores

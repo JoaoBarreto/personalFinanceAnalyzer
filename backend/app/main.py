@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from .api.routers import auth
+from .api.routers import accounts, auth, imports
 from .config import ENABLE_DOCS
 
 app = FastAPI(
@@ -10,6 +10,8 @@ app = FastAPI(
     openapi_url="/openapi.json" if ENABLE_DOCS else None,
 )
 app.include_router(auth.router)
+app.include_router(accounts.router)
+app.include_router(imports.router)
 
 
 @app.get("/api/health")

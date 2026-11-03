@@ -35,6 +35,7 @@ class ParsedStatement:
     periodo_inicio: date | None
     periodo_fim: date | None
     ordem_ficheiro: Literal["asc", "desc"] | None
+    ordem_ambigua: bool
     saldo_inicial: Decimal | None
     saldo_final: Decimal | None
     movimentos: list[ParsedMovement] = field(default_factory=list)  # ordem cronológica

@@ -32,7 +32,8 @@ def _pt(x: D) -> str:
     return f'"{x:.2f}"'.replace(".", ",")
 
 
-def build_csv() -> bytes:
+def build_csv(rows=None, saldo_inicial=SALDO_INICIAL) -> bytes:
+    rows = ROWS if rows is None else rows
     lines = [
         ",,,,,,,,",
         "[Financial Institution],,,,,,,,",
@@ -43,8 +44,8 @@ def build_csv() -> bytes:
         " ,,,,,,,,",
         "Data Movimento,Data Valor,Descrição,Transacção,Montante,Moeda,Saldo,Taxa Câmbio,Data Taxa Câmbio",
     ]
-    saldo = SALDO_INICIAL
-    for dm, dv, desc, m in ROWS:
+    saldo = saldo_inicial
+    for dm, dv, desc, m in rows:
         saldo += m
         d = f'"{desc}"' if "," in desc else desc
         lines.append(f"{dm},{dv},{d},-,{_pt(m)},EUR,{_pt(saldo)},-,-")
@@ -52,7 +53,7 @@ def build_csv() -> bytes:
         " ,,,,,,,,",
         '"Conforme condições definidas em Preçário, disponível online. Texto legal, com vírgulas.",,,,,,,,',
     ]
-    assert saldo == SALDO_FINAL
+    assert rows is not ROWS or saldo == SALDO_FINAL
     return "\n".join(lines).encode("utf-8")
 
 
@@ -97,3 +98,19 @@ def client(db):
 
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def api(client):
+    """Cliente autenticado (cookie + CSRF) com uma conta Bankinter criada."""
+    from app.cli import create_user
+
+    create_user("joao", "João", "uma-password-longa")
+    r = client.post("/api/auth/login", json={"username": "joao", "password": "uma-password-longa"})
+    client.headers["X-CSRF-Token"] = r.json()["csrf_token"]
+    c = client.post(
+        "/api/accounts", json={"nome": "Ordenado", "banco": "Bankinter", "parser_id": "bankinter_csv"}
+    )
+    assert c.status_code == 201
+    client.conta_id = c.json()["id"]
+    return client
