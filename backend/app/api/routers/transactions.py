@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -200,7 +200,10 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
     out: dict = {"categorizados": len(movs), "regra": None, "impacto": None}
     if body.criar_regra:
         lr = body.criar_regra
-        rin = RuleIn(padrao=lr.padrao, tipo_match=lr.tipo_match, categoria_id=body.categoria_id)
+        try:
+            rin = RuleIn(padrao=lr.padrao, tipo_match=lr.tipo_match, categoria_id=body.categoria_id)
+        except ValidationError as e:
+            raise HTTPException(422, "; ".join(x["msg"] for x in e.errors())) from e
         db.flush()
         out["impacto"] = categorizer.impact(db, draft(rin))  # inclui alerta de conflitos (outra categoria)
         r = Regra(

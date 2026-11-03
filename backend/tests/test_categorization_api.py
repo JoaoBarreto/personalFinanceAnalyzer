@@ -238,3 +238,18 @@ def test_invariante_categoria_origem(api, db):
         text("select count(*) from movimentos where (categoria_id is null) <> (categoria_origem is null)")
     )
     assert n == 0 and db.scalar(select(Movimento.id).limit(1)) is not None
+
+
+def test_palavra_chave_curta_e_422_e_nao_altera_nada(api, db):
+    import_all(api)
+    r = api.post(
+        "/api/transactions/bulk-categorize",
+        json={
+            "descricao_normalizada": "SUPERMERCADO",
+            "categoria_id": cat_id(db, "Supermercado"),
+            "criar_regra": {"padrao": "A"},
+        },
+    )
+    assert r.status_code == 422
+    assert txs(api, q="SUPERMERCADO")["items"][0]["categoria_id"] is None  # nada foi gravado
+    assert db.scalars(select(Regra)).all() == []

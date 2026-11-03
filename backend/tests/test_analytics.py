@@ -77,9 +77,8 @@ def test_comparacoes_com_mes_anterior_e_medias(api, db):
     s = get(api, "summary", data_de="2026-11-01", data_ate="2026-11-30")
     assert s["anterior"]["periodo"] == {"data_de": "2026-10-01", "data_ate": "2026-10-31"}
     assert s["anterior"]["despesas"] == "872.99" and s["anterior"]["variacao_despesas_pct"] == "-50.00"
-    assert s["media_6m"]["despesas"] == str(
-        (DESPESAS / 6).quantize(D("0.01"))
-    )  # média dos 6 meses anteriores
+    assert s["media_6m"]["despesas"] == "872.99"  # só existe outubro: média de 1 mês, não de 6
+    assert s["media_6m"]["variacao_despesas_pct"] == "-50.00"
 
 
 def test_sem_dados(api):
@@ -94,3 +93,14 @@ def test_sem_dados(api):
 
 def test_categorias_existem_para_o_seed(db):
     assert db.scalar(select(Categoria.id).where(Categoria.nome == "Supermercado")) is not None
+
+
+def test_media_ignora_meses_anteriores_ao_primeiro_movimento(api, db):
+    import_all(api)
+    out = get(api, "summary", data_de="2026-10-01", data_ate="2026-10-31")
+    assert out["media_6m"] == {
+        "despesas": None,
+        "receitas": None,
+        "variacao_despesas_pct": None,
+    }  # sem histórico
+    assert out["media_12m"]["despesas"] is None

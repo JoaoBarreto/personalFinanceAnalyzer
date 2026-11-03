@@ -74,10 +74,24 @@ def _previous(d0: date, d1: date) -> tuple[date, date]:
 
 
 def _avg_monthly(db: Session, conta_id, incl, d0: date, n: int):
-    """Média mensal dos n meses completos anteriores a d0 (considera n meses mesmo sem movimentos)."""
-    start, end = _month_start(d0, n), d0 - timedelta(days=1)
-    desp, rec = _totals(db, conta_id, incl, start, end)
-    return desp / n, rec / n
+    """Média mensal dos até n meses completos anteriores ao mês de d0, só desde o 1.º movimento.
+
+    Devolve None quando não há nenhum mês completo com histórico (em vez de dividir por meses inexistentes).
+    """
+    first = db.scalar(
+        select(func.min(Movimento.data_movimento)).where(
+            *([Movimento.conta_id == conta_id] if conta_id else [])
+        )
+    )
+    if first is None:
+        return None
+    cur = d0.replace(day=1)
+    start = max(_month_start(cur, n), first.replace(day=1))
+    months = (cur.year * 12 + cur.month) - (start.year * 12 + start.month)
+    if months <= 0:
+        return None
+    desp, rec = _totals(db, conta_id, incl, start, cur - timedelta(days=1))
+    return desp / months, rec / months
 
 
 def _var(atual: Decimal, ref: Decimal) -> str | None:
@@ -99,12 +113,12 @@ def summary(
     pdesp, prec = _totals(db, conta_id, incluir_transferencias, p0, p1)
     medias = {}
     for n in (6, 12):
-        md, mr = _avg_monthly(db, conta_id, incluir_transferencias, d0, n)
-        medias[f"media_{n}m"] = {
-            "despesas": _s(md),
-            "receitas": _s(mr),
-            "variacao_despesas_pct": _var(desp, md),
-        }
+        avg = _avg_monthly(db, conta_id, incluir_transferencias, d0, n)
+        medias[f"media_{n}m"] = (
+            {"despesas": None, "receitas": None, "variacao_despesas_pct": None}
+            if avg is None
+            else {"despesas": _s(avg[0]), "receitas": _s(avg[1]), "variacao_despesas_pct": _var(desp, avg[0])}
+        )
     por_categorizar = db.scalar(
         select(func.count()).select_from(Movimento).where(Movimento.categoria_id.is_(None))
     )
