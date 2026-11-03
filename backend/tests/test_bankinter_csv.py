@@ -74,14 +74,6 @@ def test_corrupcao_de_um_centimo_e_detetada(content):
     assert s.quebras[0].esperado - s.quebras[0].encontrado == D("-0.01")
 
 
-def test_cp1252(content):
-    raw = content.decode().encode("cp1252")
-    assert raw != content  # tem 'Ã' em COMISSÃO
-    s = parser.parse(raw)
-    assert len(s.movimentos) == N_LINHAS
-    assert any("COMISSÃO" in m.descricao_original for m in s.movimentos)
-
-
 def test_nao_bankinter():
     assert parser.can_parse(b"a,b,c\n1,2,3\n") == 0.0
     with pytest.raises(ParseError):
@@ -113,24 +105,6 @@ def test_bom_utf8(content):
     _same_as_baseline(b"\xef\xbb\xbf" + content, content)
 
 
-def test_separador_ponto_e_virgula(content):
-    import csv
-    import io
-
-    rows = list(csv.reader(io.StringIO(content.decode())))
-    out = io.StringIO()
-    csv.writer(out, delimiter=";", lineterminator="\n").writerows(rows)
-    _same_as_baseline(out.getvalue().encode(), content)
-
-
-def test_milhares_com_ponto(content):
-    import re
-
-    text = re.sub(r'"(-?)(\d{1,3})(\d{3}),(\d\d)"', r'"\1\2.\3,\4"', content.decode())
-    assert '"2.380,91"' in text  # a variante foi mesmo aplicada
-    _same_as_baseline(text.encode(), content)
-
-
 def test_linhas_de_cabecalho_a_mais_e_sem_rodape(content):
     lines = content.decode().splitlines()
     cut = next(i for i, l in enumerate(lines) if l.startswith(" ,,,") and i > 8)  # antes do rodapé
@@ -159,69 +133,95 @@ def test_numero_invalido_da_erro_claro(content):
         parser.parse(bad)
 
 
-# --- Separador decimal: ponto ou vírgula (regressão: «-889.50» lido como -88950) ------------------
+# --- Modelo estrito: tudo o que não seguir o export do Bankinter é RECUSADO com uma explicação --------
 
 
-def test_todos_os_estilos_numericos_dao_os_mesmos_valores(content_any):
-    s = parser.parse(content_any)
-    assert len(s.movimentos) == N_LINHAS and s.reconciliado
-    assert (s.saldo_inicial, s.saldo_final) == (SALDO_INICIAL, SALDO_FINAL)
-    assert sum(m.montante for m in s.movimentos) == D("2407.92")
-    assert [m.montante for m in s.movimentos][:3] == [D("900.00"), D("-2.25"), D("-668.14")]
+def _recusa(raw: bytes) -> str:
+    with pytest.raises(ParseError) as e:
+        parser.parse(raw)
+    msg = str(e.value)
+    assert "não foi importado" in msg and "sem o abrir e voltar a guardar" in msg  # diz o que fazer a seguir
+    return msg
 
 
-def test_regressao_valores_do_ecra_do_utilizador():
-    from app.parsers.banks.bankinter.csv_export import _parse_amount, detect_number_style
-
-    for raw, esperado in [
-        ("-21.00", "-21.00"),
-        ("32.82", "32.82"),
-        ("-889.50", "-889.50"),
-        ("2,380.91", "2380.91"),
-    ]:
-        style = detect_number_style([raw, "0.10"])
-        assert style == "ponto" and _parse_amount(raw, style) == D(
-            esperado
-        )  # antes: -2100, 3282, -88950, 2.38091
-    assert _parse_amount("-889,50", "virgula") == D("-889.50")
-
-
-def test_ficheiro_com_ponto_decimal_nao_multiplica_por_100():
+def test_ponto_decimal_e_recusado_e_mostra_o_valor_e_a_linha():
+    """Regressão: «-889.50» era lido como -88950 e a reconciliação não o apanhava."""
     rows = [
-        ("05-01-2026", "05-01-2026", "PAG. IMPOSTOS", D("-221.54")),
-        ("06-01-2026", "06-01-2026", "MEO", D("10.94")),
+        ("05-01-2026", "05-01-2026", "PAG. IMPOSTOS", D("-889.50")),
+        ("06-01-2026", "06-01-2026", "MEO", D("32.82")),
     ]
-    s = parser.parse(build_csv(rows, saldo_inicial=D("1000.00"), estilo="ponto"))
-    assert [m.montante for m in s.movimentos] == [D("-221.54"), D("10.94")]
-    assert s.saldo_final == D("789.40") and s.reconciliado
+    msg = _recusa(build_csv(rows, saldo_inicial=D("38000.00"), estilo="ponto"))
+    assert "linha 9" in msg and "ponto como separador decimal" in msg and "-889.50" in msg  # 1.ª ocorrência
 
 
-def test_mistura_de_estilos_e_recusada(content):
-    mixed = build_csv(estilo="ponto").replace(b'"-2.25"', b'"-2,25"', 1)
-    with pytest.raises(ParseError, match="inconsistente"):
-        parser.parse(mixed)
+@pytest.mark.parametrize("estilo", ["ponto_milhares", "virgula_milhares"])
+def test_separador_de_milhares_e_recusado(estilo):
+    msg = _recusa(build_csv(estilo=estilo))
+    assert "milhares" in msg or "ponto como separador decimal" in msg
 
 
-def test_valores_ambiguos_sem_decimais_sao_recusados():
-    from app.parsers.banks.bankinter.csv_export import detect_number_style
+def test_ponto_e_virgula_como_separador_de_campos_e_recusado(content):
+    import csv
+    import io
 
-    with pytest.raises(ParseError, match="ambíguos"):
-        detect_number_style(["1.234", "-2.500"])
-    assert detect_number_style(["100", "-50"]) == "virgula"  # inteiros simples: sem ambiguidade
-
-
-def test_mais_de_duas_casas_decimais_e_agrupamento_invalido_sao_recusados():
-    from app.parsers.banks.bankinter.csv_export import _parse_amount
-
-    for style in ("virgula", "ponto"):
-        for bad in ("2.38091", "2,38091", "12.34.5", "1,2345.00" if style == "ponto" else "1.2345,00"):
-            with pytest.raises(ParseError):
-                _parse_amount(bad, style)
+    rows = list(csv.reader(io.StringIO(content.decode())))
+    out = io.StringIO()
+    csv.writer(out, delimiter=";", lineterminator="\n").writerows(rows)
+    assert "«;»" in _recusa(out.getvalue().encode())
 
 
-def test_decisao_pelo_ultimo_separador():
-    from app.parsers.banks.bankinter.csv_export import detect_number_style
+def test_outra_codificacao_e_recusada(content):
+    assert "UTF-8" in _recusa(content.decode().encode("cp1252"))
 
-    assert detect_number_style(["1.234.567,89"]) == "virgula"
-    assert detect_number_style(["1,234,567.89"]) == "ponto"
-    assert detect_number_style(["2,380.91"]) == "ponto" and detect_number_style(["2.380,91"]) == "virgula"
+
+def test_colunas_diferentes_do_modelo_sao_recusadas(content):
+    msg = _recusa(content.replace(b"Montante", b"Valor", 1))
+    assert "Esperado:" in msg and "Encontrado:" in msg and "Valor" in msg
+
+
+def test_falta_de_coluna_e_recusada(content):
+    assert "colunas não correspondem" in _recusa(content.replace(",Data Taxa Câmbio".encode(), b"", 1))
+
+
+@pytest.mark.parametrize("data", ["2026-10-02", "02/10/2026", "2-10-2026"])
+def test_data_noutro_formato_e_recusada_e_nunca_trunca_em_silencio(content, data):
+    bad = content.replace(b"02-10-2026,02-10-2026,DD SERVICO", f"{data},02-10-2026,DD SERVICO".encode(), 1)
+    assert bad != content
+    assert "formato inesperado" in _recusa(
+        bad
+    )  # sem isto, a linha seria tomada por rodapé e o resto perdia-se
+
+
+def test_data_valor_invalida_e_recusada(content):
+    bad = content.replace(b"02-10-2026,02-10-2026,DD SERVICO", b"02-10-2026,xx,DD SERVICO", 1)
+    assert "Data Valor" in _recusa(bad)
+
+
+@pytest.mark.parametrize(("antes", "depois", "frase"), [
+    (b'"-2,25"', b'"-2,5"', "2 casas decimais"),
+    (b'"-2,25"', b'"-2"', "2 casas decimais"),
+    (b'"-2,25"', b'"abc"', "não é um valor numérico"),
+    (b'"-2,25"', b'""', "em branco"),
+])  # fmt: skip
+def test_montantes_fora_do_modelo_sao_recusados(content, antes, depois, frase):
+    assert frase in _recusa(content.replace(antes, depois, 1))
+
+
+def test_moeda_diferente_e_recusada(content):
+    assert "Moeda diferente de EUR" in _recusa(content.replace(b",EUR,", b",USD,", 1))
+
+
+def test_linhas_fora_do_periodo_do_cabecalho_sao_recusadas(content):
+    bad = content.replace(b"01-10-2026 a 31-10-2026", b"01-10-2026 a 02-10-2026")
+    assert "fora do período" in _recusa(bad)
+
+
+def test_problemas_iguais_sao_agrupados_com_contagem_e_primeira_ocorrencia():
+    rows = [(f"{d:02d}-01-2026", f"{d:02d}-01-2026", f"M{d}", D("-1.50")) for d in range(1, 21)]
+    msg = _recusa(build_csv(rows, estilo="ponto"))
+    assert msg.count("• ") == 2  # Montante e Saldo: uma linha cada, não 40
+    assert "20 ocorrência(s); primeira na linha 9" in msg
+
+
+def test_o_modelo_original_continua_aceite_com_bom_e_crlf(content):
+    parser.parse(b"\xef\xbb\xbf" + content.replace(b"\n", b"\r\n"))

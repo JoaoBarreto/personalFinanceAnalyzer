@@ -47,6 +47,7 @@ def list_transactions(
     conta_id: int | None = None,
     titular: str | None = None,
     categoria_id: int | None = None,
+    descricao_normalizada: str | None = None,
     sem_categoria: bool = False,
     data_de: date | None = None,
     data_ate: date | None = None,
@@ -59,6 +60,8 @@ def list_transactions(
 ):
     stmt = select(Movimento, Categoria).outerjoin(Categoria, Categoria.id == Movimento.categoria_id)
     stmt = stmt.where(*scope_conds(conta_id, titular))
+    if descricao_normalizada is not None:
+        stmt = stmt.where(Movimento.descricao_normalizada == descricao_normalizada)
     if sem_categoria:
         stmt = stmt.where(Movimento.categoria_id.is_(None))
     elif categoria_id is not None:

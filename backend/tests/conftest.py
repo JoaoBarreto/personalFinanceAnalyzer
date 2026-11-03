@@ -43,6 +43,16 @@ def _pt(x: D) -> str:
     return _num(x, "virgula")
 
 
+def _periodo(rows) -> str:
+    """Como o homebanking: o período pedido cobre os meses inteiros das datas do extrato."""
+    import calendar
+    from datetime import datetime
+
+    datas = [datetime.strptime(r[0], "%d-%m-%Y") for r in rows]
+    a, b = min(datas), max(datas)
+    return f"01-{a:%m-%Y} a {calendar.monthrange(b.year, b.month)[1]:02d}-{b:%m-%Y}"
+
+
 def build_csv(rows=None, saldo_inicial=SALDO_INICIAL, estilo="virgula") -> bytes:
     rows = ROWS if rows is None else rows
     lines = [
@@ -51,7 +61,7 @@ def build_csv(rows=None, saldo_inicial=SALDO_INICIAL, estilo="virgula") -> bytes
         " ,,,,,,,,",
         "Nº de Conta à Ordem: [ACCT_REDACTED] ( EUR) - [Individual_1]  ,,,,,,,,",
         " ,,,,,,,,",
-        "Movimentos no período: 01-10-2026 a 31-10-2026,,,,,,,,",
+        f"Movimentos no período: {_periodo(rows)},,,,,,,,",
         " ,,,,,,,,",
         "Data Movimento,Data Valor,Descrição,Transacção,Montante,Moeda,Saldo,Taxa Câmbio,Data Taxa Câmbio",
     ]
@@ -71,12 +81,6 @@ def build_csv(rows=None, saldo_inicial=SALDO_INICIAL, estilo="virgula") -> bytes
 @pytest.fixture
 def content() -> bytes:
     return build_csv()
-
-
-@pytest.fixture(params=ESTILOS)
-def content_any(request) -> bytes:
-    """O mesmo extrato nos quatro formatos numéricos possíveis."""
-    return build_csv(estilo=request.param)
 
 
 @pytest.fixture(scope="session")

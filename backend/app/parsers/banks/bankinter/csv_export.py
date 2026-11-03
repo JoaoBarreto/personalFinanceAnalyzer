@@ -1,8 +1,15 @@
-"""Parser da exportação CSV de movimentos do Bankinter (homebanking).
+"""Parser ESTRITO da exportação CSV de movimentos do Bankinter (homebanking).
 
-Layout observado (validar com novos exports): linhas de cabeçalho livres, uma linha de colunas
-`Data Movimento,Data Valor,Descrição,Transacção,Montante,Moeda,Saldo,...`, linhas de dados com datas
-`dd-mm-aaaa` e números `"1234,56"`, e um rodapé legal. Não se assume nº fixo de linhas de cabeçalho.
+Aceita apenas o modelo do export original; qualquer desvio é recusado com uma mensagem a explicar o que está
+errado (nunca se adivinha o formato). Modelo (confirmado com o ficheiro real):
+  - UTF-8 (BOM opcional), separador de campos «,», quebras de linha \n ou \r\n;
+  - linha de colunas exata: Data Movimento, Data Valor, Descrição, Transacção, Montante, Moeda, Saldo,
+    Taxa Câmbio, Data Taxa Câmbio (nº de linhas de cabeçalho livre, o resto do preâmbulo é ignorado);
+  - datas dd-mm-aaaa; montante e saldo com vírgula decimal, exatamente 2 casas e SEM separador de milhares
+    (ex.: "-889,50", "38293,30"); moeda EUR; rodapé legal ignorado.
+Motivo: um CSV aberto e guardado noutra aplicação (Excel, LibreOffice, Google Sheets) passa a usar ponto decimal,
+«;» ou outra codificação, e um valor «-889.50» lido como milhares dava -88950, que a reconciliação de saldos não
+apanha (escala uniforme em montantes e saldos).
 """
 
 from __future__ import annotations
@@ -17,88 +24,72 @@ from ...base import ParsedMovement, ParsedStatement, ParseError
 from ...reconcile import chronological_breaks, detect_order
 
 BANK_ID = "bankinter_csv"
+EXPECTED_HEADER = (
+    "Data Movimento", "Data Valor", "Descrição", "Transacção", "Montante", "Moeda", "Saldo",
+    "Taxa Câmbio", "Data Taxa Câmbio",
+)  # fmt: skip
 _DATE_RE = re.compile(r"^\d{2}-\d{2}-\d{4}$")
+_DATE_LIKE_RE = re.compile(r"^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}$")  # parece data mas noutro formato
+_AMOUNT_RE = re.compile(r"^-?\d+,\d{2}$")
 _PERIOD_RE = re.compile(r"(\d{2}-\d{2}-\d{4})\s*a\s*(\d{2}-\d{2}-\d{4})")
 _CURRENCY_RE = re.compile(r"\(\s*([A-Z]{3})\s*\)")
-_REQUIRED = ("data movimento", "data valor", "descri", "montante", "saldo")
+_MAX_PROBLEMS = 8
+HINT = (
+    "Use o ficheiro original exportado do homebanking, sem o abrir e voltar a guardar noutra aplicação "
+    "(Excel, LibreOffice, Google Sheets), ou corrija o ficheiro e carregue-o de novo."
+)
+
+
+def _fail(problems: list[str]) -> ParseError:
+    return ParseError(
+        "O ficheiro não está de acordo com o formato do export do Bankinter e não foi importado:\n• "
+        + "\n• ".join(problems)
+        + f"\n{HINT}"
+    )
 
 
 def _decode(content: bytes) -> str:
-    for enc in ("utf-8-sig", "cp1252"):
-        try:
-            return content.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    raise ParseError("Não foi possível descodificar o ficheiro (esperado UTF-8 ou CP1252).")
+    try:
+        return content.decode("utf-8-sig")  # BOM aceite; qualquer outra codificação é recusada
+    except UnicodeDecodeError as e:
+        raise _fail(["O ficheiro não está em UTF-8 (foi provavelmente guardado por outra aplicação)."]) from e
 
 
 def _parse_date(s: str) -> date:
     return datetime.strptime(s.strip(), "%d-%m-%Y").date()
 
 
-# Formatos numéricos aceites. O separador decimal é detetado UMA vez por ficheiro (nunca por célula, nem por omissão):
-# um ficheiro com `-889.50` lido como se o ponto fosse separador de milhares dava -88950, e a reconciliação de
-# saldos não o apanha porque multiplica montantes e saldos pelo mesmo fator.
-_STYLE_RE = {
-    "virgula": re.compile(r"^[+-]?(\d{1,3}(\.\d{3})+|\d+)(,\d{1,2})?$"),  # 1.234,56
-    "ponto": re.compile(r"^[+-]?(\d{1,3}(,\d{3})+|\d+)(\.\d{1,2})?$"),  # 1,234.56
-}
-
-
-def _clean(s: str) -> str:
-    return s.strip().replace(" ", "").replace("\u00a0", "")
-
-
-def _vote(s: str) -> str | None:
-    """'virgula' | 'ponto' se a célula decide o estilo; None se for ambígua (ex.: «1.234») ou um inteiro simples."""
-    t = _clean(s).lstrip("+-")
-    if not t or not re.fullmatch(r"[\d.,]+", t):
-        raise ParseError(f"Número inválido: {s!r}")
-    com, pon = "," in t, "." in t
-    if com and pon:  # o último separador é o decimal
-        return "virgula" if t.rfind(",") > t.rfind(".") else "ponto"
-    if not (com or pon):
-        return None
-    sep = "," if com else "."
-    if t.count(sep) > 1:  # separador repetido = milhares; o decimal (se existir) é o outro
-        return "ponto" if sep == "," else "virgula"
-    return ("virgula" if com else "ponto") if len(t.split(sep)[1]) in (1, 2) else None
-
-
-def detect_number_style(values: list[str]) -> str:
-    votes = {v for s in values if (v := _vote(s))}
-    if len(votes) > 1:
-        raise ParseError(
-            "Formato numérico inconsistente no ficheiro (mistura vírgula e ponto como separador decimal)."
+def _why_bad_amount(t: str) -> tuple[str, str]:
+    """(tipo, explicação) do motivo por que `t` não está no formato do Bankinter (ex.: -889,50)."""
+    if t == "":
+        return "branco", "valor em branco"
+    if re.fullmatch(r"-?\d{1,3}(,\d{3})+\.\d{1,2}", t):
+        return "ponto_milhares", (
+            "usa vírgula de milhares e ponto decimal (ex.: 37,778.46); "
+            "o Bankinter usa vírgula decimal e não tem milhares (ex.: 37778,46)"
         )
-    if votes:
-        return votes.pop()
-    if any(re.search(r"[.,]", _clean(s)) for s in values):
-        raise ParseError(
-            "Não foi possível determinar o separador decimal (valores como «1.234» são ambíguos). "
-            "Exporte o ficheiro com casas decimais."
+    if re.fullmatch(r"-?\d+\.\d{1,2}", t):
+        return (
+            "ponto",
+            "usa ponto como separador decimal (ex.: 889.50); o Bankinter usa vírgula (ex.: 889,50)",
         )
-    return "virgula"  # só inteiros simples: qualquer estilo dá o mesmo resultado
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+,\d{1,2}", t):
+        return (
+            "milhares",
+            "tem ponto como separador de milhares (ex.: 1.234,56); o Bankinter não o usa (ex.: 1234,56)",
+        )
+    if re.fullmatch(r"-?\d+(,\d)?", t) or re.fullmatch(r"-?\d+,\d{3,}", t):
+        return "casas", "não tem exatamente 2 casas decimais (ex.: 889,50)"
+    return "naonum", "não é um valor numérico no formato do Bankinter (ex.: -889,50)"
 
 
-def _parse_amount(s: str, style: str) -> Decimal:
-    t = _clean(s)
-    if not _STYLE_RE[style].match(t):
-        raise ParseError(f"Número inválido para o formato detetado ({style}): {s!r}")
-    t = t.replace(".", "").replace(",", ".") if style == "virgula" else t.replace(",", "")
-    return Decimal(t)
-
-
-def _rows(text: str) -> list[list[str]]:
-    sample = text[:4096]
-    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+def _rows(text: str, delimiter: str = ",") -> list[list[str]]:
     return list(csv.reader(io.StringIO(text), delimiter=delimiter))
 
 
 def _find_header(rows: list[list[str]]) -> int | None:
     for i, r in enumerate(rows):
-        cells = [c.strip().lower() for c in r]
-        if cells and cells[0] == "data movimento" and all(any(k in c for c in cells) for k in _REQUIRED):
+        if r and r[0].strip().casefold() == "data movimento":
             return i
     return None
 
@@ -107,26 +98,29 @@ class BankinterCsvParser:
     bank_id = BANK_ID
 
     def can_parse(self, content: bytes) -> float:
-        try:
-            return 1.0 if _find_header(_rows(_decode(content))) is not None else 0.0
-        except ParseError:
-            return 0.0
+        # Tolerante de propósito: se parece ser deste banco, o parse explica o que está errado.
+        return 1.0 if b"data movimento" in content.lower() else 0.0
 
     def parse(self, content: bytes) -> ParsedStatement:
-        rows = _rows(_decode(content))
+        text = _decode(content)
+        rows = _rows(text)
         h = _find_header(rows)
         if h is None:
-            raise ParseError(
-                "Cabeçalho 'Data Movimento' não encontrado: não parece uma exportação Bankinter."
+            if _find_header(_rows(text, ";")) is not None:
+                raise _fail(["O ficheiro usa «;» como separador de campos; o export do Bankinter usa «,»."])
+            raise _fail(["Não encontrei a linha de colunas «Data Movimento, Data Valor, Descrição, …»."])
+        found = [c.strip() for c in rows[h]]
+        while found and not found[-1]:
+            found.pop()
+        if [c.casefold() for c in found] != [c.casefold() for c in EXPECTED_HEADER]:
+            raise _fail(
+                [
+                    "As colunas não correspondem ao modelo do Bankinter.",
+                    "Esperado: " + ", ".join(EXPECTED_HEADER) + ".",
+                    "Encontrado: " + ", ".join(found) + ".",
+                ]
             )
-        cols = [c.strip().lower() for c in rows[h]]
-        idx = {
-            "mov": cols.index("data movimento"),
-            "valor": cols.index("data valor"),
-            "desc": next(i for i, c in enumerate(cols) if c.startswith("descri")),
-            "montante": cols.index("montante"),
-            "saldo": cols.index("saldo"),
-        }
+        idx = {name: i for i, name in enumerate(c.casefold() for c in EXPECTED_HEADER)}
 
         moeda = periodo_inicio = periodo_fim = None
         for r in rows[:h]:
@@ -136,36 +130,91 @@ class BankinterCsvParser:
             if periodo_inicio is None and (m := _PERIOD_RE.search(line)):
                 periodo_inicio, periodo_fim = _parse_date(m.group(1)), _parse_date(m.group(2))
 
+        # Problemas agregados por tipo («N ocorrências; primeira na linha L, «exemplo»»): um ficheiro de um ano com
+        # ponto decimal daria centenas de queixas iguais.
+        agg: dict[str, dict] = {}
+
+        def bad(key: str, texto: str, lineno: int, ex: str = "") -> None:
+            a = agg.setdefault(key, {"n": 0, "linha": lineno, "ex": ex, "texto": texto})
+            a["n"] += 1
+
         cells: list[tuple[date, date | None, str, str, str]] = []
         for lineno, r in enumerate(rows[h + 1 :], start=h + 2):
-            if not r or not _DATE_RE.match(r[0].strip()):
+            first = r[0].strip() if r else ""
+            if _DATE_LIKE_RE.match(first) and not _DATE_RE.match(first):
+                bad(
+                    "data_fmt",
+                    "Data num formato inesperado (esperado dd-mm-aaaa, ex.: 05-10-2026)",
+                    lineno,
+                    first,
+                )
+                continue
+            if not _DATE_RE.match(first):
                 break  # fim dos dados (linha em branco ou rodapé)
-            if len(r) <= max(idx.values()):
-                raise ParseError(f"Linha {lineno} com colunas a menos.")
-            vd = r[idx["valor"]].strip()
+            if len(r) <= idx["saldo"]:
+                bad(
+                    "cols",
+                    f"Linha com colunas a menos (esperado {len(EXPECTED_HEADER)})",
+                    lineno,
+                    str(len(r)),
+                )
+                continue
+            vd = r[idx["data valor"]].strip()
+            if not _DATE_RE.match(vd):
+                bad("data_valor", "Data Valor fora do formato dd-mm-aaaa", lineno, vd)
+                continue
+            mo = r[idx["moeda"]].strip()
+            if mo != (moeda or "EUR"):
+                bad("moeda", f"Moeda diferente de {moeda or 'EUR'}", lineno, mo)
+            ok = True
+            for col in ("montante", "saldo"):
+                v = r[idx[col]].strip()
+                if not _AMOUNT_RE.match(v):
+                    tipo, porque = _why_bad_amount(v)
+                    bad(f"{col}:{tipo}", f"{col.capitalize()} {porque}", lineno, v)
+                    ok = False
             try:
+                dm, dvd = _parse_date(first), _parse_date(vd)
+            except ValueError:
+                bad("data_invalida", "Data inválida (dia ou mês inexistente)", lineno, f"{first} / {vd}")
+                continue
+            if ok:
                 cells.append(
                     (
-                        _parse_date(r[idx["mov"]]),
-                        _parse_date(vd) if _DATE_RE.match(vd) else None,
-                        r[idx["desc"]].strip(),
-                        r[idx["montante"]],
-                        r[idx["saldo"]],
+                        dm,
+                        dvd,
+                        r[idx["descrição"]].strip(),
+                        r[idx["montante"]].strip(),
+                        r[idx["saldo"]].strip(),
                     )
                 )
-            except ValueError as e:
-                raise ParseError(f"Linha {lineno}: {e}") from e
 
+        if periodo_inicio and periodo_fim:
+            for dm, *_ in cells:
+                if not (periodo_inicio <= dm <= periodo_fim):
+                    bad(
+                        "periodo",
+                        f"Datas fora do período indicado no cabeçalho ({periodo_inicio:%d-%m-%Y} a {periodo_fim:%d-%m-%Y})",
+                        0,
+                        f"{dm:%d-%m-%Y}",
+                    )
+        if agg:
+            raise _fail(
+                [
+                    f"{a['texto']} — {a['n']} ocorrência(s)"
+                    + (f"; primeira na linha {a['linha']}" if a["linha"] else "")
+                    + (f", «{a['ex']}»" if a["ex"] else "")
+                    + "."
+                    for a in agg.values()
+                ]
+            )
         if not cells:
-            raise ParseError("Nenhum movimento encontrado.")
-        style = detect_number_style([c[3] for c in cells] + [c[4] for c in cells])
-        try:
-            raw = [
-                (dm, dv, desc, _parse_amount(m, style), _parse_amount(sd, style))
-                for dm, dv, desc, m, sd in cells
-            ]
-        except ParseError as e:
-            raise ParseError(f"{e}") from e
+            raise _fail(["Nenhum movimento encontrado depois da linha de colunas."])
+
+        raw = [
+            (dm, dv, desc, Decimal(m.replace(",", ".")), Decimal(sd.replace(",", ".")))
+            for dm, dv, desc, m, sd in cells
+        ]
 
         ordem, ambigua = detect_order([(r[3], r[4]) for r in raw])
         chrono = raw if ordem == "asc" else raw[::-1]

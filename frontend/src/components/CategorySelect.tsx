@@ -23,6 +23,7 @@ export default function CategorySelect({ categories, value, onChange, emptyLabel
         const kids = active.filter((c) => c.parent_id === p.id);
         return kids.length ? (
           <optgroup key={p.id} label={p.nome}>
+            <option value={p.id}>{p.nome} (geral)</option>
             {kids.map((k) => (
               <option key={k.id} value={k.id}>
                 {k.nome}

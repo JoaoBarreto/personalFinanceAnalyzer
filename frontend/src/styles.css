@@ -40,7 +40,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 button.link { background: none; border: none; color: var(--accent); padding: .2rem; }
 button.link.danger { color: var(--bad); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.error { color: var(--bad); } .ok { color: var(--good); } .warn-text { color: var(--warn); }
+.error { color: var(--bad); white-space: pre-line; } .ok { color: var(--good); } .warn-text { color: var(--warn); }
 .badge { display: inline-block; padding: .2rem .6rem; border-radius: 999px; background: var(--page); border: 1px solid var(--border); font-size: .85rem; text-decoration: none; color: var(--ink-2); }
 .badge.warn { color: var(--warn); border-color: var(--warn); } .badge.good { color: var(--good); border-color: var(--good); } .badge.bad { color: var(--bad); border-color: var(--bad); }
 .tag { display: inline-block; margin-left: .4rem; padding: 0 .4rem; border-radius: 4px; font-size: .75rem; background: var(--page); color: var(--ink-2); border: 1px solid var(--border); }
@@ -120,3 +120,5 @@ p.ok.sticky { position: sticky; top: 0; z-index: 5; background: var(--surface); 
 .lines-scroll { max-height: 40vh; overflow: auto; margin-top: .4rem; border: 1px solid var(--grid); border-radius: 8px; }
 .lines-scroll table.data th, .lines-scroll table.data td { padding: .3rem .6rem; font-size: .88rem; }
 tr.struck td:not(:first-child) { text-decoration: line-through; }
+table.cats td.indent { padding-left: 2rem; } table.cats td.strong-cell input { font-weight: 600; }
+table.cats td input:not([type="checkbox"]) { width: 100%; max-width: 22rem; } table.cats td.actions { white-space: nowrap; text-align: right; }

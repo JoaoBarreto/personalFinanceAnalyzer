@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, errorMessage, type Category } from "../api";
+import { api, errorMessage, type Category, type Tx } from "../api";
 import CategorySelect from "../components/CategorySelect";
 import { useAsync } from "../hooks";
 import { dataPt, eur } from "../lib/format";
@@ -13,6 +13,25 @@ type Changed = {
 };
 type BulkResult = { categorizados: number; aplicados: number; regra: { id: number } | null; impacto: Impact | null; alteradas: Changed[] };
 export type LastAction = { msg: string; alteradas: Changed[]; regraId: number | null };
+
+/** Linhas deste grupo, carregadas só quando se abre (data, montante e saldo ajudam a perceber o que é). */
+function GroupLines({ desc }: { desc: string }) {
+  const [open, setOpen] = useState(false);
+  const lines = useAsync(() => (open ? api.get<{ items: Tx[] }>("/api/transactions", { descricao_normalizada: desc, sem_categoria: true, page_size: 100 }) : Promise.resolve(null)), [open, desc]);
+  return (
+    <details className="lines" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary>Ver as linhas deste grupo (data e montante)</summary>
+      {lines.data && (
+        <div className="lines-scroll"><table className="data">
+          <thead><tr><th>Data</th><th>Descrição original</th><th className="num">Montante</th><th className="num">Saldo</th></tr></thead>
+          <tbody>{lines.data.items.map((t) => (
+            <tr key={t.id}><td>{dataPt(t.data_movimento)}</td><td>{t.descricao_original}</td><td className="num">{eur(t.montante)}</td><td className="num muted">{eur(t.saldo_apos)}</td></tr>
+          ))}</tbody>
+        </table></div>
+      )}
+    </details>
+  );
+}
 
 function GroupRow({ g, cats, version, onDone }: { g: Group; cats: Category[]; version: number; onDone: (a: LastAction) => void }) {
   const [cat, setCat] = useState<number | null>(null);
@@ -66,6 +85,7 @@ function GroupRow({ g, cats, version, onDone }: { g: Group; cats: Category[]; ve
         <span className="muted">{g.n} movimento{g.n > 1 ? "s" : ""} · {eur(g.total)}</span>
       </div>
       <div className="muted small" title="Descrição original de um dos movimentos">{g.exemplo_original}</div>
+      <GroupLines desc={g.descricao_normalizada} />
       <div className="row">
         <CategorySelect aria-label="Categoria" categories={cats} value={cat} onChange={setCat} emptyLabel="Escolher categoria…" />
         <label className="check"><input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} /> Criar regra</label>

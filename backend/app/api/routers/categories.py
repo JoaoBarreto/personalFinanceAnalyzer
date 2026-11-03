@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
-from ...models import Categoria
+from ...models import Categoria, Movimento, Regra
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
@@ -35,13 +35,20 @@ class CategoryOut(BaseModel):
     cor: str | None
     icone: str | None
     ativa: bool
+    n_movimentos: int = 0  # só preenchido na listagem
 
     model_config = {"from_attributes": True}
 
 
 @router.get("", response_model=list[CategoryOut])
 def list_categories(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    return db.scalars(select(Categoria).order_by(Categoria.parent_id.nulls_first(), Categoria.nome)).all()
+    usados = dict(
+        db.execute(select(Movimento.categoria_id, func.count()).group_by(Movimento.categoria_id)).all()
+    )
+    cats = db.scalars(select(Categoria).order_by(Categoria.parent_id.nulls_first(), Categoria.nome)).all()
+    return [
+        CategoryOut.model_validate(c).model_copy(update={"n_movimentos": usados.get(c.id, 0)}) for c in cats
+    ]
 
 
 @router.post("", response_model=CategoryOut, status_code=201)
@@ -81,3 +88,21 @@ def patch_category(
         db.rollback()
         raise HTTPException(409, "Já existe uma categoria com esse nome neste nível") from e
     return cat
+
+
+@router.delete("/{cat_id}", status_code=204)
+def delete_category(cat_id: int, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    """Só se não estiver em uso (filhas, movimentos ou regras); caso contrário, desative-a."""
+    cat = db.get(Categoria, cat_id)
+    if cat is None:
+        raise HTTPException(404, "Categoria não encontrada")
+    if db.scalar(select(func.count()).select_from(Categoria).where(Categoria.parent_id == cat_id)):
+        raise HTTPException(409, "Tem subcategorias: apague-as primeiro (ou desative a categoria).")
+    if db.scalar(select(func.count()).select_from(Movimento).where(Movimento.categoria_id == cat_id)):
+        raise HTTPException(409, "Há movimentos nesta categoria: desative-a em vez de a apagar.")
+    if db.scalar(select(func.count()).select_from(Regra).where(Regra.categoria_id == cat_id)):
+        raise HTTPException(
+            409, "Há regras que usam esta categoria: apague-as primeiro (ou desative a categoria)."
+        )
+    db.delete(cat)
+    db.commit()

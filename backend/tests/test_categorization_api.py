@@ -402,3 +402,52 @@ def test_restore_valida_o_par_categoria_origem(api, db):
     assert bad.status_code == 422
     ok = api.post("/api/transactions/restore", json={"itens": [{"id": 999999, "categoria_id": None}]})
     assert ok.json()["restaurados"] == 0  # ids inexistentes são ignorados
+
+
+def test_categorias_contagem_e_apagar(api, db):
+    _variantes_continente(api)
+    sup = cat_id(db, "Supermercado")
+    tid = txs(api, q="PINGO")["items"][0]["id"]
+    api.patch(f"/api/transactions/{tid}", json={"categoria_id": sup})
+    lista = {c["nome"]: c for c in api.get("/api/categories").json()}
+    assert lista["Supermercado"]["n_movimentos"] == 1 and lista["Restaurantes"]["n_movimentos"] == 0
+    assert api.delete(f"/api/categories/{sup}").status_code == 409  # tem movimentos
+    alim = lista["Alimentação"]["id"]
+    assert api.delete(f"/api/categories/{alim}").status_code == 409  # tem subcategorias
+    nova = api.post("/api/categories", json={"nome": "Educação", "tipo": "despesa"}).json()
+    filha = api.post("/api/categories", json={"nome": "Colégio", "parent_id": nova["id"]}).json()
+    api.post("/api/rules", json={"padrao": "COLEGIO", "categoria_id": filha["id"]})
+    assert api.delete(f"/api/categories/{filha['id']}").status_code == 409  # tem regras
+    assert api.delete(f"/api/categories/{nova['id']}").status_code == 409  # tem subcategorias
+    regra = api.get("/api/rules").json()[0]["id"]
+    api.delete(f"/api/rules/{regra}")
+    assert api.delete(f"/api/categories/{filha['id']}").status_code == 204
+    assert api.delete(f"/api/categories/{nova['id']}").status_code == 204
+    assert api.delete("/api/categories/999999").status_code == 404
+
+
+def test_categoria_pai_pode_ser_atribuida(api, db):
+    """Um imposto por identificar fica em «Impostos e taxas» (a categoria-pai), sem subcategoria."""
+    import_all(api, [("05-04-2026", "05-04-2026", "PAG. IMPOSTOS", D("-664.62"))])
+    pai = cat_id(db, "Impostos e taxas")
+    tid = txs(api)["items"][0]["id"]
+    assert (
+        api.patch(f"/api/transactions/{tid}", json={"categoria_id": pai}).json()["categoria_nome"]
+        == "Impostos e taxas"
+    )
+    j = api.get(
+        "/api/analytics/by-category",
+        params={"nivel": "filho", "data_de": "2026-04-01", "data_ate": "2026-04-30"},
+    )
+    assert [i["nome"] for i in j.json()["itens"]] == ["Impostos e taxas"] and j.json()["itens"][0][
+        "total"
+    ] == "664.62"
+
+
+def test_listar_linhas_de_um_grupo(api, db):
+    _variantes_continente(api)
+    r = api.get(
+        "/api/transactions",
+        params={"descricao_normalizada": "CONTINENTE MODELO LISBOA", "sem_categoria": True},
+    ).json()
+    assert r["total"] == 2 and {t["montante"] for t in r["items"]} == {"-40.00", "-31.00"}

@@ -227,23 +227,20 @@ def test_meses_encadeados_sem_avisos(api, db):
     assert [m.montante for m in movs(db)] == [row[3] for row in ROWS]  # histórico completo e em ordem
 
 
-def test_importar_com_ponto_decimal_guarda_os_valores_certos(api, db):
-    """Regressão: um extrato com «-889.50» tem de gravar -889.50 e não -88950."""
+def test_csv_guardado_noutra_aplicacao_e_recusado_e_nao_grava_nada(api, db):
+    """Regressão: «-889.50» (ponto decimal) tem de ser RECUSADO, com a explicação, e nada fica gravado."""
     rows = [
         ("05-01-2026", "05-01-2026", "COMPRA 0000000.01 LOJA A", D("-889.50")),
         ("06-01-2026", "06-01-2026", "TRF A CREDITO SEPA+ - MEO", D("32.82")),
-        ("07-01-2026", "07-01-2026", "COMPRA 0000000.02 LOJA B", D("-21.00")),
     ]
-    for estilo in ("ponto", "ponto_milhares"):
-        p = up(api, build_csv(rows, saldo_inicial=D("38000.00"), estilo=estilo)).json()
-        assert (
-            p["saldo_inicial"] == "38000.00" and p["saldo_final"] == "37122.32" and p["reconciliado"] is True
-        )
-        assert [ln["montante"] for ln in p["linhas"]] == ["-889.50", "32.82", "-21.00"]
-        assert confirm(api, p["id"]).status_code == 200
-        assert [m.montante for m in movs(db)] == [D("-889.50"), D("32.82"), D("-21.00")]
-        assert (
-            api.delete(f"/api/imports/{p['id']}").status_code == 204
-        )  # reverter para testar o estilo seguinte
-    r = api.get("/api/transactions", params={"q": "LOJA"}).json()
-    assert r["total"] == 0
+    r = up(api, build_csv(rows, saldo_inicial=D("38000.00"), estilo="ponto"))
+    assert r.status_code == 422
+    detalhe = r.json()["detail"]
+    assert "não está de acordo com o formato" in detalhe and "ponto como separador decimal" in detalhe
+    assert "linha 9" in detalhe and "sem o abrir e voltar a guardar" in detalhe
+    assert movs(db) == []
+    imp = db.scalars(select(Importacao)).one()
+    assert imp.estado == "erro" and "ponto como separador decimal" in imp.erro_detalhe
+    # o mesmo extrato, no formato original do banco, entra com os valores certos
+    ok = up(api, build_csv(rows, saldo_inicial=D("38000.00"))).json()
+    assert [ln["montante"] for ln in ok["linhas"]] == ["-889.50", "32.82"] and ok["saldo_final"] == "37143.32"

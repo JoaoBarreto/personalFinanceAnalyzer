@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import Accounts from "./pages/Accounts";
+import Categories from "./pages/Categories";
 import Dashboard from "./pages/Dashboard";
 import Import from "./pages/Import";
 import Login from "./pages/Login";
@@ -20,6 +21,7 @@ export default function App() {
           <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/movimentos">Movimentos</NavLink>
           <NavLink to="/rever">Por categorizar</NavLink>
+          <NavLink to="/categorias">Categorias</NavLink>
           <NavLink to="/regras">Regras</NavLink>
           <NavLink to="/importar">Importar</NavLink>
           <NavLink to="/contas">Contas</NavLink>
@@ -33,6 +35,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/movimentos" element={<Transactions />} />
           <Route path="/rever" element={<Review />} />
+          <Route path="/categorias" element={<Categories />} />
           <Route path="/regras" element={<Rules />} />
           <Route path="/importar" element={<Import />} />
           <Route path="/contas" element={<Accounts />} />
