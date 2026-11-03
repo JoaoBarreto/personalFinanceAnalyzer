@@ -66,7 +66,7 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; white-s
 .grid2 { display: grid; grid-template-columns: 1fr 1.3fr; gap: .75rem; }
 @media (max-width: 1000px) { .kpis { grid-template-columns: 1fr 1fr; } .hero { grid-column: 1 / -1; } }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } .hero-value { font-size: 2.4rem; } }
-.hbar-row { display: grid; grid-template-columns: minmax(6rem, 10rem) 1fr auto; align-items: center; gap: .6rem; padding: .2rem 0; }
+.hbar-row { display: grid; grid-template-columns: minmax(6rem, 10rem) 1fr auto; border-radius: 6px; align-items: center; gap: .6rem; padding: .2rem 0; }
 .hbar-row.clickable { cursor: pointer; } .hbar-row.clickable:hover .hbar-label { color: var(--accent); }
 .hbar-label { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hbar-track { display: flex; align-items: center; min-width: 0; }
@@ -125,3 +125,6 @@ table.cats td input:not([type="checkbox"]) { width: 100%; max-width: 22rem; } ta
 table.rules td.actions { white-space: nowrap; text-align: right; } table.rules td input:not([type="checkbox"]) { max-width: 16rem; }
 details.newrule > summary { cursor: pointer; font-weight: 600; } details.newrule[open] > summary { margin-bottom: .6rem; }
 .toolbar.filters { margin-top: .25rem; }
+.hbar-row.clickable:hover, .hbar-row.clickable:focus-visible { background: var(--page); }
+.hbar-go { display: inline-block; width: 1rem; margin-left: .3rem; color: var(--ink-2); text-align: center; }
+.hbar-fill.folded { background: var(--s1); opacity: .55; }

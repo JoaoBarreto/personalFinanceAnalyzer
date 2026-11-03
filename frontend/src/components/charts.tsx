@@ -11,15 +11,16 @@ function tickLabel(p: string, first: boolean): string {
 export type CatItem = { categoria_id: number | null; nome: string; total: string; n: number; percentagem: string | null };
 export type PeriodItem = { periodo: string; despesas: string; receitas: string; poupanca: string; saldo_fim: string | null };
 
-/** Barras horizontais por categoria: top N + "Outros"; valor na ponta; barra <= 16px, ponta de dados com 4px. */
+/** Barras horizontais por categoria: top N + «Outros» (que se expande); valor e percentagem ao lado; clicar abre os movimentos. */
 export function CategoryBars({ items, onPick, max = 8 }: { items: CatItem[]; onPick?: (id: number | null) => void; max?: number }) {
   const [tip, setTip] = useState<string | null>(null);
-  const head = items.slice(0, max);
+  const [expanded, setExpanded] = useState(false);
+  const head = expanded ? items : items.slice(0, max);
   const rest = items.slice(max);
   const rows: (CatItem & { folded?: boolean })[] = [...head];
-  if (rest.length) {
-    const sum = rest.reduce((a, r) => a + toCents(r.total), 0);
-    rows.push({ categoria_id: -1, nome: `Outros (${rest.length})`, total: fromCents(sum), n: rest.reduce((a, r) => a + r.n, 0), percentagem: null, folded: true });
+  if (rest.length && !expanded) {
+    const sumRest = rest.reduce((a, r) => a + toCents(r.total), 0);
+    rows.push({ categoria_id: -1, nome: `Outros (${rest.length})`, total: fromCents(sumRest), n: rest.reduce((a, r) => a + r.n, 0), percentagem: null, folded: true });
   }
   const peak = Math.max(1, ...rows.map((r) => toCents(r.total)));
   const sum = Math.max(1, rows.reduce((a, r) => a + toCents(r.total), 0));
@@ -29,30 +30,38 @@ export function CategoryBars({ items, onPick, max = 8 }: { items: CatItem[]; onP
     <div className="hbar" role="list" aria-label="Despesas por categoria">
       {rows.map((r) => {
         const w = (toCents(r.total) / peak) * 100;
-        const pick = !r.folded && onPick;
+        const action = r.folded ? () => setExpanded(true) : onPick ? () => onPick(r.categoria_id) : undefined;
+        const hint = r.folded ? "Mostrar as categorias agrupadas" : "Ver os movimentos desta categoria";
         return (
           <div
             role="listitem"
-            className={`hbar-row${pick ? " clickable" : ""}`}
+            className={`hbar-row${action ? " clickable" : ""}`}
             key={r.categoria_id ?? "none"}
+            tabIndex={action ? 0 : undefined}
+            title={action ? hint : undefined}
             onMouseEnter={() => setTip(`${r.nome}: ${eur(r.total)} · ${r.n} mov.${r.percentagem ? ` · ${r.percentagem.replace(".", ",")} %` : ""}`)}
             onMouseLeave={() => setTip(null)}
-            onClick={pick ? () => onPick(r.categoria_id) : undefined}
+            onClick={action}
+            onKeyDown={action ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); action(); } } : undefined}
           >
             <div className="hbar-label" title={r.nome}>
               {r.nome}
             </div>
             <div className="hbar-track">
-              <div className={`hbar-fill${r.categoria_id === null ? " muted" : ""}`} style={{ width: `${Math.max(w, 0.5)}%` }} />
+              <div className={`hbar-fill${r.categoria_id === null ? " muted" : ""}${r.folded ? " folded" : ""}`} style={{ width: `${Math.max(w, 0.5)}%` }} />
             </div>
             <div className="hbar-value">
               {eur(r.total)} <span className="hbar-pct">{share(toCents(r.total))}</span>
+              {action && <span className="hbar-go" aria-hidden="true">{r.folded ? "▾" : "›"}</span>}
             </div>
           </div>
         );
       })}
+      {expanded && rest.length > 0 && (
+        <button className="link" onClick={() => setExpanded(false)}>Mostrar menos</button>
+      )}
       <div className="tip-line" aria-live="polite">
-        {tip ?? " "}
+        {tip ?? (onPick ? "Clique numa categoria para ver os movimentos." : "\u00a0")}
       </div>
     </div>
   );
