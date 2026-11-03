@@ -54,16 +54,16 @@ export default function Transactions() {
       </div>
       {(err || list.error) && <p className="error" role="alert">{err ?? list.error}</p>}
       <div className="card flush">
-        <table className="data">
-          <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th className="num">Montante</th><th className="num">Saldo</th></tr></thead>
+        <table className="data tx">
+          <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th className="num">Montante</th><th className="num hide-sm">Saldo</th></tr></thead>
           <tbody>
             {list.data?.items.map((t) => (
               <tr key={t.id}>
-                <td>{dataPt(t.data_movimento)}</td>
-                <td title={t.descricao_original}>{t.descricao_normalizada}{t.categoria_origem === "manual" && <span className="tag" title={`Categorizado manualmente${nomeDe(t.atualizado_por) ? ` por ${nomeDe(t.atualizado_por)}` : ""}`}>manual</span>}</td>
-                <td>{cats.data && <CategorySelect aria-label={`Categoria de ${t.descricao_normalizada}`} categories={cats.data} value={t.categoria_id} onChange={(id) => setCat(t, id)} />}</td>
-                <td className={`num ${t.montante.startsWith("-") ? "neg" : "pos"}`}>{eur(t.montante)}</td>
-                <td className="num muted">{eur(t.saldo_apos)}</td>
+                <td className="c-date">{dataPt(t.data_movimento)}</td>
+                <td className="c-desc" title={t.descricao_original}>{t.descricao_normalizada}{t.categoria_origem === "manual" && <span className="tag" title={`Categorizado manualmente${nomeDe(t.atualizado_por) ? ` por ${nomeDe(t.atualizado_por)}` : ""}`}>manual</span>}</td>
+                <td className="c-cat">{cats.data && <CategorySelect aria-label={`Categoria de ${t.descricao_normalizada}`} categories={cats.data} value={t.categoria_id} onChange={(id) => setCat(t, id)} />}</td>
+                <td className={`num c-amount ${t.montante.startsWith("-") ? "neg" : "pos"}`}>{eur(t.montante)}</td>
+                <td className="num muted hide-sm">{eur(t.saldo_apos)}</td>
               </tr>
             ))}
             {list.data?.items.length === 0 && <tr><td colSpan={5} className="muted">Sem movimentos.</td></tr>}

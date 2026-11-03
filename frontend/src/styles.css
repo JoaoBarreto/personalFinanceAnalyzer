@@ -85,3 +85,17 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; white-s
 .tooltip { position: absolute; top: 2.2rem; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .7rem; font-size: .85rem; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); white-space: nowrap; }
 .group { padding: .7rem 1rem; margin: .5rem 0; } .group .row input:not([type="checkbox"]):not(.mini) { width: 9rem; }
 .group .row.small { margin-top: .3rem; gap: .8rem; }
+@media (max-width: 700px) {
+  .hide-sm { display: none; }
+  table.data th, table.data td { padding: .45rem .5rem; }
+  table.tx, table.tx tbody { display: block; }
+  table.tx thead { display: none; }
+  table.tx tr { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "desc amount" "date cat"; gap: .15rem .6rem; padding: .6rem .75rem; border-bottom: 1px solid var(--grid); }
+  table.tx td { border: 0; padding: 0; }
+  table.tx .c-desc { grid-area: desc; font-weight: 500; overflow-wrap: anywhere; }
+  table.tx .c-amount { grid-area: amount; font-weight: 600; }
+  table.tx .c-date { grid-area: date; color: var(--muted); font-size: .85rem; align-self: center; }
+  table.tx .c-cat { grid-area: cat; justify-self: end; }
+  table.tx .c-cat select { max-width: 11rem; }
+  .toolbar h1 { width: 100%; }
+}

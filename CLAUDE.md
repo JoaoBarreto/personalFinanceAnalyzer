@@ -14,7 +14,7 @@ Analytics feito: `/api/analytics/summary|by-category|monthly` (transferências f
 Frontend feito (`frontend/`: React 19 + Vite + TS, CSS próprio, gráficos em SVG/HTML sem libs; páginas Dashboard, Movimentos, Por categorizar, Regras, Importar; nginx faz proxy de `/api` e serve a SPA). Paleta validada com o skill dataviz (slots 1–3, claro e escuro). `make test-frontend` corre typecheck + vitest num contentor (sem node local); o compose corre com `podman-compose`. Validado a ver a UI com Chromium headless num contentor (capturas e interações), não há testes automáticos de UI.
 Dois utilizadores feito: contas com `titular_id` (None = conjunta), `GET /api/users`, `PATCH /api/accounts/{id}`, filtro `titular` (id ou `conjunta`) em movimentos e analytics (`api/scope.py`), `atualizado_por` nos movimentos, página Contas e seletor de titular na UI. Ambos os utilizadores veem os mesmos dados (sem papéis).
 Deploy no mini-PC feito (Docker real + `tailscale serve`, 443→8080).
-Por fazer: CSV anonimizado da esposa (confirmar se o layout é igual ao do Bankinter; senão adaptar parser/mapeamento), backup (só quando a release estiver estável), parser XLSX se o Bankinter o exportar, UI em ecrãs pequenos (não verificada). Fase 2: fuzzy/ML, splits, tags, deteção de transferências.
+Por fazer: CSV anonimizado da esposa (confirmar se o layout é igual ao do Bankinter; senão adaptar parser/mapeamento), backup (só quando a release estiver estável), parser XLSX se o Bankinter o exportar, UI em ecrãs pequenos (verificada a 390 px com Chromium headless: sem scroll horizontal; Movimentos passa a «cartões» abaixo de 700 px; falta ver Regras/Importar com mais atenção). Fase 2: fuzzy/ML, splits, tags, deteção de transferências.
 
 ## Commands
 
