@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
-from ...models import Categoria, Movimento, Regra
+from ...models import Categoria, CategorizacaoGuardada, Movimento, Regra
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
@@ -104,5 +104,7 @@ def delete_category(cat_id: int, _: Auth = Depends(require_auth), db: Session = 
         raise HTTPException(
             409, "Há regras que usam esta categoria: apague-as primeiro (ou desative a categoria)."
         )
+    # categorizações manuais guardadas (reset/reversão) para esta categoria: deixam de fazer sentido
+    db.execute(delete(CategorizacaoGuardada).where(CategorizacaoGuardada.categoria_id == cat_id))
     db.delete(cat)
     db.commit()

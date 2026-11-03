@@ -151,3 +151,18 @@ def test_reset_repetido_nao_faz_nada(api, db):
         and r["importacoes_apagadas"] == 0
         and r["categorizacoes_guardadas"] == 0
     )
+
+
+def test_apagar_categoria_com_categorizacoes_guardadas_nao_da_erro(api, db):
+    from .test_categorization_api import cat_id as _cat
+
+    import_all(api, _extrato_com_excecoes())
+    nova = api.post("/api/categories", json={"nome": "Educação", "tipo": "despesa"}).json()
+    tid = txs(api)["items"][0]["id"]
+    api.patch(f"/api/transactions/{tid}", json={"categoria_id": nova["id"]})
+    reset.reset_movements(db)
+    assert N(db, CategorizacaoGuardada) == 1
+    assert (
+        api.delete(f"/api/categories/{nova['id']}").status_code == 204
+    )  # sem movimentos nem regras: pode ir
+    assert N(db, CategorizacaoGuardada) == 0 and _cat(db, "Educação") is None
