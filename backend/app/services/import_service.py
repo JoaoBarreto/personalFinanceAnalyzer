@@ -21,6 +21,7 @@ from ..models import Conta, Importacao, Movimento
 from ..parsers.base import ParsedStatement, ParseError
 from ..parsers.reconcile import chronological_breaks
 from ..parsers.registry import get_parser
+from .categorizer import categorize
 from .dedup import DedupResult, Row, deduplicate
 from .normalizer import normalize
 
@@ -309,25 +310,29 @@ def confirm(db: Session, imp_id: int, body: ConfirmIn, user_id: int) -> dict[str
         i for i in res.duplicados + res.possiveis_duplicados if i not in excluded and i not in to_insert
     ]
 
+    novos: list[Movimento] = []
     for i in to_insert:
         ln = lines[i]
         if ln.montante == 0:
             raise ServiceError(422, f"A linha {i} tem montante 0.")
-        db.add(
-            Movimento(
-                conta_id=imp.conta_id,
-                importacao_id=imp.id,
-                data_movimento=ln.data_movimento,
-                data_valor=ln.data_valor,
-                ordem_no_dia=ln.ordem_no_dia,
-                descricao_original=ln.descricao_original,
-                descricao_normalizada=normalize(ln.descricao_original),
-                montante=ln.montante,
-                saldo_apos=ln.saldo_apos,
-                criado_por=user_id,
-                atualizado_por=user_id,
-            )
+        mov = Movimento(
+            conta_id=imp.conta_id,
+            importacao_id=imp.id,
+            data_movimento=ln.data_movimento,
+            data_valor=ln.data_valor,
+            ordem_no_dia=ln.ordem_no_dia,
+            descricao_original=ln.descricao_original,
+            descricao_normalizada=normalize(ln.descricao_original),
+            montante=ln.montante,
+            saldo_apos=ln.saldo_apos,
+            criado_por=user_id,
+            atualizado_por=user_id,
         )
+        db.add(mov)
+        novos.append(mov)
+    # Categorização automática: regras, depois histórico (PRD 3.5); manuais nunca são tocadas
+    db.flush()
+    categorize(db, novos, only_uncategorized=True)
     imp.estado, imp.confirmada_em = "confirmada", _now()
     imp.n_movimentos, imp.n_duplicados_ignorados = len(to_insert), len(ignorados)
     imp.n_excluidos_utilizador = len(excluded)

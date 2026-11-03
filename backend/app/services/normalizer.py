@@ -35,3 +35,21 @@ def normalize(descricao: str) -> str:
     tokens = [t for t in s.split(" ") if t and not _is_noise(t)]
     out = " ".join(tokens).strip(" -,:;.")
     return out or re.sub(r"\s+", " ", unidecode(descricao).upper()).strip()
+
+
+def normalize_pattern(padrao: str) -> str:
+    """Padrões de regra: maiúsculas, sem acentos, espaços colapsados (sem remoção de ruído)."""
+    return re.sub(r"\s+", " ", unidecode(padrao).upper()).strip()
+
+
+_STOP = {"DE", "DA", "DO", "DOS", "DAS", "LDA", "SA", "WWW", "COM", "PT", "LISBOA", "PORTO", "LOURES"}
+
+
+def suggest_keyword(descricao_normalizada: str) -> str:
+    """Keyword proposta para uma regra (PRD 3.6): 1.º token útil, p.ex. FNAC e não FNAC CHIADO LISBOA 12/03."""
+    tokens = [re.sub(r"^\W+|\W+$", "", t) for t in descricao_normalizada.split()]
+    tokens = [t for t in tokens if t and t not in _STOP]
+    for t in tokens:
+        if len(t) >= 4:
+            return t
+    return " ".join(tokens[:2]) or descricao_normalizada
