@@ -128,3 +128,9 @@ details.newrule > summary { cursor: pointer; font-weight: 600; } details.newrule
 .hbar-row.clickable:hover, .hbar-row.clickable:focus-visible { background: var(--page); }
 .hbar-go { display: inline-block; width: 1rem; margin-left: .3rem; color: var(--ink-2); text-align: center; }
 .hbar-fill.folded { background: var(--s1); opacity: .55; }
+.infotip { position: relative; display: inline-block; vertical-align: middle; margin-left: .4rem; font-weight: 400; }
+.infotip-btn { width: 1.15rem; height: 1.15rem; padding: 0; border-radius: 50%; border: 1px solid var(--axis); background: var(--page); color: var(--ink-2); font-size: .72rem; font-weight: 600; line-height: 1; cursor: help; }
+.infotip-btn:hover, .infotip-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.infotip-pop { position: absolute; z-index: 30; top: 1.65rem; left: 0; width: min(24rem, 86vw); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .28); padding: .75rem .9rem; font-size: .85rem; line-height: 1.4; color: var(--ink); text-align: left; white-space: normal; }
+.infotip-pop strong { display: block; margin-bottom: .25rem; } .infotip-pop p { margin: .35rem 0 0; }
+.infotip-pop.right { left: auto; right: 0; }

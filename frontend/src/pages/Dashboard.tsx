@@ -5,7 +5,8 @@ import { CategoryBars, PeriodChart, type CatItem, type PeriodItem } from "../com
 import { CoverageBanner } from "../components/Coverage";
 import TitularSelect from "../components/TitularSelect";
 import { useAsync } from "../hooks";
-import { dataPt, eur, pct } from "../lib/format";
+import InfoTip from "../components/InfoTip";
+import { dataPt, eur, mesPt, pct } from "../lib/format";
 
 type Summary = {
   periodo: { data_de: string; data_ate: string };
@@ -91,6 +92,9 @@ export default function Dashboard() {
     nav(`/movimentos?${q}`, { state: { from: "dashboard" } });
   };
   const anterior = modo === "ano" ? "ano anterior" : "mês anterior";
+  const periodo = modo === "ano" ? `todo o ano de ${ym} (1 jan – 31 dez)` : `o mês de ${ym ? mesPt(ym) : "…"}`;
+  const noPeriodo = modo === "ano" ? `em ${periodo}` : `n${periodo}`; // «em todo o ano…» / «no mês de…»
+  const doPeriodo = modo === "ano" ? `de ${periodo}` : `d${periodo}`; // «de todo o ano…» / «do mês de…»
   return (
     <>
       <div className="toolbar">
@@ -118,27 +122,27 @@ export default function Dashboard() {
         <>
           <section className="kpis">
             <div className="hero">
-              <span className="kpi-label">Saldo da conta</span>
+              <span className="kpi-label">Saldo da conta<InfoTip title="Saldo da conta"><p>Dinheiro que tem na conta no <strong style={{ display: "inline" }}>fim do período</strong>, lido da coluna «Saldo» do último movimento até essa data.</p><p>Não depende das categorias nem do filtro «Incluir transferências».</p></InfoTip></span>
               <span className="hero-value">{eur(s.saldo.fim)}</span>
               <span className="kpi-sub">em {dataPt(s.periodo.data_ate)}</span>
             </div>
             <div className="tile">
-              <span className="kpi-label">Poupança do período</span><span className="tile-value">{eur(s.poupanca)}</span>
+              <span className="kpi-label">Poupança do período<InfoTip title="Poupança do período"><p>Receitas menos despesas {doPeriodo}, sem as transferências.</p><p>Taxa de poupança = poupança ÷ receitas.</p></InfoTip></span><span className="tile-value">{eur(s.poupanca)}</span>
               <span className="kpi-sub small">Taxa de poupança {pct(s.taxa_poupanca_pct)}</span>
             </div>
             <div className="tile">
-              <span className="kpi-label">Receitas</span><span className="tile-value">{eur(s.receitas)}</span>
+              <span className="kpi-label">Receitas<InfoTip title="Receitas"><p>Soma dos movimentos de entrada (valor positivo) {doPeriodo}, sem as transferências.</p><p>A variação compara com o {anterior}: (atual − anterior) ÷ anterior.</p></InfoTip></span><span className="tile-value">{eur(s.receitas)}</span>
               <Delta v={s.anterior.variacao_receitas_pct} upIsGood label={anterior} />
             </div>
             <div className="tile">
-              <span className="kpi-label">Despesas</span><span className="tile-value">{eur(s.despesas)}</span>
+              <span className="kpi-label">Despesas<InfoTip title="Despesas"><p>Soma dos movimentos de saída (valor negativo) {doPeriodo}, sem as transferências. Os reembolsos não são descontados.</p><p>A variação compara com o {anterior}.{modo === "mes" ? " A «média 6 meses» é a média mensal dos 6 meses completos anteriores ao mês escolhido (só desde o 1.º movimento)." : ""}</p></InfoTip></span><span className="tile-value">{eur(s.despesas)}</span>
               <Delta v={s.anterior.variacao_despesas_pct} upIsGood={false} label={anterior} />
               {modo === "mes" && <Delta v={s.media_6m.variacao_despesas_pct} upIsGood={false} label="média 6 meses" />}
             </div>
           </section>
           {s.saldo.inicio !== null && (
             <section className="card bridge" aria-label="Do saldo inicial ao final">
-              <h2>Do saldo inicial ao final</h2>
+              <h2>Do saldo inicial ao final<InfoTip title="Do saldo inicial ao final"><p>Saldo inicial + receitas − despesas ± transferências = saldo final.</p><p>As transferências ficam fora de receitas e despesas, por isso aparecem à parte. Se as contas não fecharem, faltam movimentos: veja o aviso de cobertura.</p></InfoTip></h2>
               <dl>
                 <dt>{primeiro && primeiro > s.periodo.data_de ? `Saldo antes do 1.º movimento (${dataPt(primeiro)})` : `Saldo inicial (${dataPt(s.periodo.data_de)})`}</dt><dd>{eur(s.saldo.inicio)}</dd>
                 <dt>+ Receitas</dt><dd>{eur(s.receitas)}</dd>
@@ -154,23 +158,31 @@ export default function Dashboard() {
       )}
       <div className="grid2">
         <section className="card">
-          <h2>Despesas por categoria</h2>
+          <h2>
+            Despesas por categoria
+            <InfoTip title="Como se calcula">
+              <p>Dinheiro que <strong style={{ display: "inline" }}>saiu</strong> da conta {noPeriodo}, somado por categoria. Contam os movimentos de saída (valor negativo); entradas e reembolsos não são descontados.</p>
+              <p>As transferências ficam de fora, a não ser que ative «Incluir transferências». Respeita o filtro de titular.</p>
+              <p>A percentagem é o valor da categoria ÷ total das despesas do período (somam 100 %).</p>
+              <p>«Por categorizar» são movimentos ainda sem categoria; «Outros (N)» junta as N categorias mais pequenas. Clique numa barra para ver os movimentos.</p>
+            </InfoTip>
+          </h2>
           {cats.data && cats.data.itens.length === 0 && <p className="muted">Sem despesas neste período.</p>}
           {cats.data && cats.data.itens.length > 0 && (
             <CategoryBars items={cats.data.itens} onPick={drill} />
           )}
         </section>
         <section className="card">
-          <h2>{modo === "ano" ? `Evolução mensal em ${ym}` : "Evolução mensal (12 meses)"}</h2>
+          <h2>{modo === "ano" ? `Evolução mensal em ${ym}` : "Evolução mensal (12 meses)"}<InfoTip title="Evolução mensal"><p>Receitas e despesas de cada mês (barras) e poupança = receitas − despesas (linha), sem transferências.</p><p>{modo === "ano" ? "Mostra janeiro a dezembro do ano escolhido." : "Mostra os 12 meses até ao mês escolhido."} «Ver tabela» dá os números e o saldo no fim de cada mês.</p></InfoTip></h2>
           {periodos.data && <PeriodChart periodos={periodos.data.periodos} titulo="Receitas, despesas e poupança por mês" />}
         </section>
       </div>
       <section className="card">
-        <h2>Despesas por categoria e mês, {anoMatriz}</h2>
+        <h2>Despesas por categoria e mês, {anoMatriz}<InfoTip title="Categoria × mês"><p>Despesas de cada categoria-pai em cada mês de {anoMatriz}, com o total por categoria e por mês. Mesmo critério das barras: saídas, sem transferências.</p></InfoTip></h2>
         {matrix.data && <CategoryMatrix m={matrix.data} />}
       </section>
       <section className="card">
-        <h2>Por ano</h2>
+        <h2>Por ano<InfoTip title="Por ano"><p>Receitas, despesas e poupança de cada ano com movimentos (1 jan – 31 dez), sem transferências.</p></InfoTip></h2>
         {anos.data && <PeriodChart periodos={anos.data.periodos} titulo="Receitas, despesas e poupança por ano" />}
       </section>
     </>
