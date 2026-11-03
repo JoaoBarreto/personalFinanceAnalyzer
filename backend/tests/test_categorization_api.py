@@ -46,7 +46,7 @@ def test_historico_categoriza_descricao_igual(api, db):
     # novo mês com a mesma descrição: o histórico categoriza (sem regra)
     outro = [("05-11-2026", "05-11-2026", "TRF A CREDITO SEPA+ - EMPRESA X", D("900.00"))]
     import_all(api, outro)
-    novo = [t for t in txs(api)["items"] if t["data_movimento"] == "2026-11-05"][0]
+    novo = next(t for t in txs(api)["items"] if t["data_movimento"] == "2026-11-05")
     assert (
         novo["categoria_id"] == sal and novo["categoria_origem"] == "historico" and novo["regra_id"] is None
     )
@@ -148,7 +148,7 @@ def test_aprendizagem_por_categorizacao_em_grupo(api, db):
     assert db.scalar(select(Regra.criado_por)) is not None
     # mês seguinte: a regra aprendida categoriza sozinha
     import_all(api, [("07-11-2026", "07-11-2026", "COMPRA 0000000.99 SUPERMERCADO NOVO", D("-10.00"))])
-    novo = [t for t in txs(api)["items"] if t["data_movimento"] == "2026-11-07"][0]
+    novo = next(t for t in txs(api)["items"] if t["data_movimento"] == "2026-11-07")
     assert novo["categoria_id"] == sup and novo["categoria_origem"] == "regra"
 
 
