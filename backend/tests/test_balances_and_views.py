@@ -209,3 +209,77 @@ def test_mes_avulso_depois_do_ano_inteiro_nao_duplica(api, db):
     assert p["resumo"] == {"novo": 0, "duplicado": 50, "possivel_duplicado": 0}
     assert confirm(api, p["id"]).json()["n_movimentos"] == 0
     assert api.get("/api/transactions", params={"page_size": 1}).json()["total"] == 600
+
+
+def _linhas_2026(ate_mes, ate_dia):
+    """Movimentos de 2026 de janeiro até `ate_mes`/`ate_dia`: 1 receita, 3 compras iguais e 1 comissão por mês."""
+    rows = []
+    for m in range(1, ate_mes + 1):
+        dias = [(2, D("2000.00")), (3, D("-10.00")), (3, D("-10.00")), (3, D("-10.00")), (28, D("-0.50"))]
+        for d, v in dias:
+            if (m, d) <= (ate_mes, ate_dia):
+                rows.append((f"{d:02d}-{m:02d}-2026", f"{d:02d}-{m:02d}-2026", f"MOV {m:02d}-{d:02d}", v))
+    return rows
+
+
+def _abertura(rows_antes, saldo0=D("1000.00")):
+    return saldo0 + sum((r[3] for r in rows_antes), D(0))
+
+
+def test_extrato_anual_e_depois_o_de_novembro_nao_duplica(api, db):
+    """Cenário real: o anual vai até hoje (3 nov) e o de novembro repete esses dias."""
+    anual = _linhas_2026(11, 3)  # janeiro a 3 de novembro
+    novembro = [r for r in _linhas_2026(11, 30) if r[0].endswith("-11-2026")]  # o mês inteiro (hoje é dia 3)
+    antes_nov = [r for r in anual if not r[0].endswith("-11-2026")]
+    confirm(api, up(api, build_csv(anual, saldo_inicial=D("1000.00"))).json()["id"])
+
+    p = up(api, build_csv(novembro, saldo_inicial=_abertura(antes_nov))).json()
+    # no extrato de novembro, os dias 1-3 já existem (2 nov: 1 linha; 3 nov: 3 linhas iguais); o resto é novo
+    repetidas = [
+        r for r in novembro if (r[0], r[3]) in {(a[0], a[3]) for a in anual if a[0].endswith("-11-2026")}
+    ]
+    assert p["resumo"]["duplicado"] == len(repetidas) == 4
+    assert p["resumo"]["novo"] == len(novembro) - 4 and p["resumo"]["possivel_duplicado"] == 0
+    assert p["avisos"] == [] and p["reconciliado"] is True
+    r = confirm(api, p["id"]).json()
+    assert r["n_movimentos"] == len(novembro) - 4 and r["n_duplicados_ignorados"] == 4
+
+    # nada foi contado duas vezes: o total de movimentos é o das linhas únicas
+    unicas = anual + [r for r in novembro if r not in anual]
+    assert api.get("/api/transactions", params={"page_size": 1}).json()["total"] == len(unicas)
+    nov = get(api, "summary", data_de="2026-11-01", data_ate="2026-11-30")
+    assert (nov["receitas"], nov["despesas"]) == (
+        "2000.00",
+        "30.50",
+    )  # 1 receita, 3×10 + 0,50 (sem duplicados)
+    assert nov["saldo"]["reconcilia"] is True and api.get("/api/coverage").json()[0]["ok"] is True
+    assert get(api, "summary", data_de="2026-01-01", data_ate="2026-12-31")["saldo"]["reconcilia"] is True
+
+
+def test_novembro_primeiro_e_depois_o_anual_tambem_nao_duplica(api, db):
+    anual = _linhas_2026(11, 3)
+    novembro = [r for r in _linhas_2026(11, 30) if r[0].endswith("-11-2026")]
+    antes_nov = [r for r in anual if not r[0].endswith("-11-2026")]
+    confirm(api, up(api, build_csv(novembro, saldo_inicial=_abertura(antes_nov))).json()["id"])
+    p = up(api, build_csv(anual, saldo_inicial=D("1000.00"))).json()
+    assert p["resumo"]["duplicado"] == 4 and p["resumo"]["possivel_duplicado"] == 0 and p["avisos"] == []
+    confirm(api, p["id"])
+    assert get(api, "summary", data_de="2026-11-01", data_ate="2026-11-30")["despesas"] == "30.50"
+    assert api.get("/api/coverage").json()[0]["ok"] is True
+
+
+def test_dia_de_hoje_incompleto_no_anual_completa_se_no_mes(api, db):
+    """O anual foi tirado a meio do dia 3 (só 2 das 3 compras iguais); o de novembro já tem as 3."""
+    anual = _linhas_2026(11, 3)
+    corte = [r for r in anual if r[0].endswith("-11-2026")][:-1]  # 3 nov com 2 compras
+    anual_a_meio = [r for r in anual if not r[0].endswith("-11-2026")] + corte
+    novembro = [r for r in _linhas_2026(11, 30) if r[0].endswith("-11-2026")]
+    antes_nov = [r for r in anual if not r[0].endswith("-11-2026")]
+    confirm(api, up(api, build_csv(anual_a_meio, saldo_inicial=D("1000.00"))).json()["id"])
+    p = up(api, build_csv(novembro, saldo_inicial=_abertura(antes_nov))).json()
+    assert p["resumo"]["duplicado"] == 3 and p["avisos"] == []  # 2 nov (1) + 3 nov (2 já lá estavam)
+    confirm(api, p["id"])
+    assert (
+        get(api, "summary", data_de="2026-11-01", data_ate="2026-11-30")["despesas"] == "30.50"
+    )  # a 3.ª compra entrou, 1 só vez
+    assert api.get("/api/coverage").json()[0]["ok"] is True

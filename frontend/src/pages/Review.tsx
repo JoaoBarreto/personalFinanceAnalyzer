@@ -14,7 +14,7 @@ type Changed = {
 type BulkResult = { categorizados: number; aplicados: number; regra: { id: number } | null; impacto: Impact | null; alteradas: Changed[] };
 export type LastAction = { msg: string; alteradas: Changed[]; regraId: number | null };
 
-function GroupRow({ g, cats, onDone }: { g: Group; cats: Category[]; onDone: (a: LastAction) => void }) {
+function GroupRow({ g, cats, version, onDone }: { g: Group; cats: Category[]; version: number; onDone: (a: LastAction) => void }) {
   const [cat, setCat] = useState<number | null>(null);
   const [kw, setKw] = useState(g.keyword_sugerida);
   const [tipo, setTipo] = useState<"contem" | "comeca_por">("contem");
@@ -34,7 +34,7 @@ function GroupRow({ g, cats, onDone }: { g: Group; cats: Category[]; onDone: (a:
         .catch(() => alive && setImpact(null));
     }, 300);
     return () => { alive = false; clearTimeout(t); };
-  }, [learn, cat, kw, tipo]);
+  }, [learn, cat, kw, tipo, version]); // `version` sobe a cada ação: as listas dos outros grupos recalculam-se e deixam de mostrar o que já foi categorizado
 
   const all = impact?.linhas ?? [];
   const visible = retro ? all : all.filter((l) => l.descricao_normalizada === g.descricao_normalizada);
@@ -158,6 +158,7 @@ export default function Review() {
   const [last, setLast] = useState<LastAction | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
 
   const undo = async () => {
     if (!last) return;
@@ -166,6 +167,7 @@ export default function Review() {
       await api.post("/api/transactions/restore", { itens: last.alteradas.map((a) => ({ id: a.id, ...a.anterior })), apagar_regra_id: last.regraId });
       setLast(null);
       setMsg("Ação desfeita: as linhas voltaram ao estado anterior e a regra criada foi apagada.");
+      setVersion((v) => v + 1);
       groups.reload();
     } catch (e) { setErr(errorMessage(e)); }
   };
@@ -183,7 +185,7 @@ export default function Review() {
       {groups.error && <p className="error">{groups.error}</p>}
       {groups.data?.grupos.length === 0 && <p className="card muted">Tudo categorizado. 🎉</p>}
       {cats.data && groups.data?.grupos.map((g) => (
-        <GroupRow key={g.descricao_normalizada} g={g} cats={cats.data!} onDone={(a) => { setLast(a); setMsg(null); groups.reload(); }} />
+        <GroupRow key={g.descricao_normalizada} g={g} cats={cats.data!} version={version} onDone={(a) => { setLast(a); setMsg(null); setVersion((v) => v + 1); groups.reload(); }} />
       ))}
     </>
   );
