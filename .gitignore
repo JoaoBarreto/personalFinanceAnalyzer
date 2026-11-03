@@ -1,0 +1,42 @@
+# Segredos e configuração local
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Dados financeiros reais ou de teste (nunca no repositório)
+dados.csv
+*.xlsx
+*.xls
+*.pdf
+data/
+!backend/tests/fixtures/**
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+.vite/
+
+# Docker / BD / backups
+pgdata/
+*.sql
+*.dump
+backups/
+
+# Editor / SO
+.idea/
+.vscode/
+.DS_Store
+*.log
