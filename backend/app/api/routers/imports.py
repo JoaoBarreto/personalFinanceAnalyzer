@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
+from ...parsers.banks.bankinter.xls_export import is_xls
 from ...services import import_service as svc
 from ...services.import_service import ConfirmIn, ServiceError
 
@@ -24,11 +25,15 @@ def preview(
     content = file.file.read(MAX_UPLOAD + 1)
     if len(content) > MAX_UPLOAD:
         raise HTTPException(413, "Ficheiro demasiado grande (máx. 10 MB)")
-    # Tipo real pelo conteúdo, não pela extensão: o MVP só aceita CSV de texto
-    if content.startswith((b"PK", b"%PDF")):
-        raise HTTPException(415, "Só são aceites ficheiros CSV neste momento")
-    if b"\x00" in content:
-        raise HTTPException(415, "O ficheiro não é texto")
+    # Tipo real pelo conteúdo, não pela extensão: .xls (contentor binário) ou CSV de texto
+    if is_xls(content):
+        pass
+    elif content.startswith(b"PK"):
+        raise HTTPException(415, "Ficheiros .xlsx não são aceites: carregue o .xls original do homebanking")
+    elif content.startswith(b"%PDF"):
+        raise HTTPException(415, "PDF ainda não é aceite: carregue o .xls original do homebanking")
+    elif b"\x00" in content:
+        raise HTTPException(415, "O ficheiro não é um .xls nem um CSV de texto")
     try:
         return svc.preview(db, conta_id, file.filename or "ficheiro.csv", content, auth.utilizador.id)
     except ServiceError as e:

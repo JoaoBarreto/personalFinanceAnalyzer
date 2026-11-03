@@ -122,3 +122,6 @@ p.ok.sticky { position: sticky; top: 0; z-index: 5; background: var(--surface); 
 tr.struck td:not(:first-child) { text-decoration: line-through; }
 table.cats td.indent { padding-left: 2rem; } table.cats td.strong-cell input { font-weight: 600; }
 table.cats td input:not([type="checkbox"]) { width: 100%; max-width: 22rem; } table.cats td.actions { white-space: nowrap; text-align: right; }
+table.rules td.actions { white-space: nowrap; text-align: right; } table.rules td input:not([type="checkbox"]) { max-width: 16rem; }
+details.newrule > summary { cursor: pointer; font-weight: 600; } details.newrule[open] > summary { margin-bottom: .6rem; }
+.toolbar.filters { margin-top: .25rem; }

@@ -16,10 +16,11 @@ dependencies = [
     "uvicorn",
     "python-multipart",
     "unidecode",
+    "xlrd>=2.0.1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "httpx"]
+dev = ["pytest", "ruff", "httpx", "xlwt"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

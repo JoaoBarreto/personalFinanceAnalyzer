@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
@@ -100,6 +100,50 @@ def draft(body: RuleIn, rule_id: int | None = None) -> RuleData:
         body.conta_id,
         body.prioridade,
     )
+
+
+def _like(text: str) -> str:
+    return "%" + text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_") + "%"
+
+
+@router.get("/search")
+def search_rules(
+    q: str | None = None,
+    categoria_id: int | None = None,
+    ativa: bool | None = None,
+    origem: str | None = Query(None, pattern="^(manual|aprendida)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=200),
+    _: Auth = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Regras paginadas, com pesquisa (palavra-chave ou nome da categoria) e filtros."""
+    stmt = select(Regra, Categoria.nome).join(Categoria, Categoria.id == Regra.categoria_id)
+    if q and q.strip():
+        stmt = stmt.where(
+            or_(
+                Regra.padrao.ilike(_like(normalize_pattern(q)), escape="\\"),
+                Categoria.nome.ilike(_like(q.strip()), escape="\\"),
+            )
+        )
+    if categoria_id is not None:
+        stmt = stmt.where(Regra.categoria_id == categoria_id)
+    if ativa is not None:
+        stmt = stmt.where(Regra.ativa.is_(ativa))
+    if origem:
+        stmt = stmt.where(Regra.origem == origem)
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = db.execute(
+        stmt.order_by(Regra.prioridade.desc(), Regra.padrao, Regra.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": [{**rule_out(r), "categoria_nome": nome} for r, nome in rows],
+    }
 
 
 @router.get("")

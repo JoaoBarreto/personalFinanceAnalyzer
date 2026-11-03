@@ -28,6 +28,10 @@ N_LINHAS = len(ROWS)
 SALDO_FINAL = D("3407.92")  # constante escrita à mão, para o teste não ser circular
 
 
+EXPECTED = (
+    "Data Movimento", "Data Valor", "Descrição", "Transacção", "Montante", "Moeda", "Saldo",
+    "Taxa Câmbio", "Data Taxa Câmbio",
+)  # fmt: skip
 ESTILOS = ("virgula", "ponto", "virgula_milhares", "ponto_milhares")
 
 
@@ -76,6 +80,68 @@ def build_csv(rows=None, saldo_inicial=SALDO_INICIAL, estilo="virgula") -> bytes
     ]
     assert rows is not ROWS or saldo == SALDO_FINAL
     return "\n".join(lines).encode("utf-8")
+
+
+def build_xls(
+    rows=None,
+    saldo_inicial=SALDO_INICIAL,
+    *,
+    datas_do_excel=False,
+    montantes_em_texto=False,
+    casas=2,
+    folhas=1,
+    cabecalho=None,
+) -> bytes:
+    """.xls sintético com a estrutura REAL do export do Bankinter (confirmada no ficheiro do utilizador):
+    1 folha, preâmbulo na coluna A (com células unidas), cabeçalho na linha 8, datas em texto, Montante/Saldo
+    numéricos (formato 0.00), linha em branco e rodapé unido. Os parâmetros produzem desvios para os testes."""
+    import datetime
+
+    import xlwt
+
+    rows = ROWS if rows is None else rows
+    wb = xlwt.Workbook()
+    ws = wb.add_sheet("Sheet0")
+    num = xlwt.easyxf(num_format_str="0.00")
+    datef = xlwt.easyxf(num_format_str="DD-MM-YYYY")
+    ws.write_merge(1, 1, 0, 8, "[Financial Institution]")
+    ws.write_merge(3, 3, 0, 8, "Nº de Conta à Ordem: [ACCT_REDACTED] ( EUR) - [Individual_1]")
+    ws.write_merge(5, 5, 0, 8, f"Movimentos no período: {_periodo(rows)}")
+    for c, h in enumerate(cabecalho or EXPECTED):
+        ws.write(7, c, h)
+    saldo = saldo_inicial
+    for i, (dm, dv, desc, m) in enumerate(rows):
+        r = 8 + i
+        saldo += m
+        for c, v in ((0, dm), (1, dv)):
+            if datas_do_excel:
+                ws.write(r, c, datetime.datetime.strptime(v, "%d-%m-%Y").date(), datef)
+            else:
+                ws.write(r, c, v)
+        ws.write(r, 2, desc)
+        ws.write(r, 3, "-")
+        for c, v in ((4, m), (6, saldo)):
+            if montantes_em_texto:
+                ws.write(r, c, f"{v:.2f}".replace(".", ","))
+            elif casas != 2:
+                ws.write(r, c, float(v) + 0.005 if c == 4 else float(v), num)  # 3.ª casa decimal
+            else:
+                ws.write(r, c, float(v), num)
+        ws.write(r, 5, "EUR")
+        ws.write(r, 7, "-")
+        ws.write(r, 8, "-")
+    fim = 8 + len(rows)
+    ws.write(fim, 0, "")
+    ws.write_merge(
+        fim + 1, fim + 1, 0, 8, "Conforme condições definidas em Preçário, disponível online. Texto legal."
+    )
+    for k in range(2, folhas + 1):
+        wb.add_sheet(f"Extra{k}")
+    import io
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 @pytest.fixture

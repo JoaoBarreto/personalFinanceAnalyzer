@@ -35,7 +35,7 @@ _PERIOD_RE = re.compile(r"(\d{2}-\d{2}-\d{4})\s*a\s*(\d{2}-\d{2}-\d{4})")
 _CURRENCY_RE = re.compile(r"\(\s*([A-Z]{3})\s*\)")
 _MAX_PROBLEMS = 8
 HINT = (
-    "Use o ficheiro original exportado do homebanking, sem o abrir e voltar a guardar noutra aplicação "
+    "Use o ficheiro .xls original exportado do homebanking, sem o abrir e voltar a guardar noutra aplicação "
     "(Excel, LibreOffice, Google Sheets), ou corrija o ficheiro e carregue-o de novo."
 )
 
@@ -94,6 +94,141 @@ def _find_header(rows: list[list[str]]) -> int | None:
     return None
 
 
+def parse_rows(rows: list[list[str]]) -> ParsedStatement:
+    """Validação estrita partilhada pelo CSV e pelo .xls: `rows` são as linhas da folha, em texto."""
+    h = _find_header(rows)
+    if h is None:
+        raise _fail(["Não encontrei a linha de colunas «Data Movimento, Data Valor, Descrição, …»."])
+    found = [c.strip() for c in rows[h]]
+    while found and not found[-1]:
+        found.pop()
+    if [c.casefold() for c in found] != [c.casefold() for c in EXPECTED_HEADER]:
+        raise _fail(
+            [
+                "As colunas não correspondem ao modelo do Bankinter.",
+                "Esperado: " + ", ".join(EXPECTED_HEADER) + ".",
+                "Encontrado: " + ", ".join(found) + ".",
+            ]
+        )
+    idx = {name: i for i, name in enumerate(c.casefold() for c in EXPECTED_HEADER)}
+
+    moeda = periodo_inicio = periodo_fim = None
+    for r in rows[:h]:
+        line = " ".join(r)
+        if moeda is None and (m := _CURRENCY_RE.search(line)):
+            moeda = m.group(1)
+        if periodo_inicio is None and (m := _PERIOD_RE.search(line)):
+            periodo_inicio, periodo_fim = _parse_date(m.group(1)), _parse_date(m.group(2))
+
+    # Problemas agregados por tipo («N ocorrências; primeira na linha L, «exemplo»»): um ficheiro de um ano com
+    # ponto decimal daria centenas de queixas iguais.
+    agg: dict[str, dict] = {}
+
+    def bad(key: str, texto: str, lineno: int, ex: str = "") -> None:
+        a = agg.setdefault(key, {"n": 0, "linha": lineno, "ex": ex, "texto": texto})
+        a["n"] += 1
+
+    cells: list[tuple[date, date | None, str, str, str]] = []
+    for lineno, r in enumerate(rows[h + 1 :], start=h + 2):
+        first = r[0].strip() if r else ""
+        if _DATE_LIKE_RE.match(first) and not _DATE_RE.match(first):
+            bad(
+                "data_fmt",
+                "Data num formato inesperado (esperado dd-mm-aaaa, ex.: 05-10-2026)",
+                lineno,
+                first,
+            )
+            continue
+        if not _DATE_RE.match(first):
+            break  # fim dos dados (linha em branco ou rodapé)
+        if len(r) <= idx["saldo"]:
+            bad(
+                "cols",
+                f"Linha com colunas a menos (esperado {len(EXPECTED_HEADER)})",
+                lineno,
+                str(len(r)),
+            )
+            continue
+        vd = r[idx["data valor"]].strip()
+        if not _DATE_RE.match(vd):
+            bad("data_valor", "Data Valor fora do formato dd-mm-aaaa", lineno, vd)
+            continue
+        mo = r[idx["moeda"]].strip()
+        if mo != (moeda or "EUR"):
+            bad("moeda", f"Moeda diferente de {moeda or 'EUR'}", lineno, mo)
+        ok = True
+        for col in ("montante", "saldo"):
+            v = r[idx[col]].strip()
+            if not _AMOUNT_RE.match(v):
+                tipo, porque = _why_bad_amount(v)
+                bad(f"{col}:{tipo}", f"{col.capitalize()} {porque}", lineno, v)
+                ok = False
+        try:
+            dm, dvd = _parse_date(first), _parse_date(vd)
+        except ValueError:
+            bad("data_invalida", "Data inválida (dia ou mês inexistente)", lineno, f"{first} / {vd}")
+            continue
+        if ok:
+            cells.append(
+                (
+                    dm,
+                    dvd,
+                    r[idx["descrição"]].strip(),
+                    r[idx["montante"]].strip(),
+                    r[idx["saldo"]].strip(),
+                )
+            )
+
+    if periodo_inicio and periodo_fim:
+        for dm, *_ in cells:
+            if not (periodo_inicio <= dm <= periodo_fim):
+                bad(
+                    "periodo",
+                    f"Datas fora do período indicado no cabeçalho ({periodo_inicio:%d-%m-%Y} a {periodo_fim:%d-%m-%Y})",
+                    0,
+                    f"{dm:%d-%m-%Y}",
+                )
+    if agg:
+        raise _fail(
+            [
+                f"{a['texto']} — {a['n']} ocorrência(s)"
+                + (f"; primeira na linha {a['linha']}" if a["linha"] else "")
+                + (f", «{a['ex']}»" if a["ex"] else "")
+                + "."
+                for a in agg.values()
+            ]
+        )
+    if not cells:
+        raise _fail(["Nenhum movimento encontrado depois da linha de colunas."])
+
+    raw = [
+        (dm, dv, desc, Decimal(m.replace(",", ".")), Decimal(sd.replace(",", ".")))
+        for dm, dv, desc, m, sd in cells
+    ]
+
+    ordem, ambigua = detect_order([(r[3], r[4]) for r in raw])
+    chrono = raw if ordem == "asc" else raw[::-1]
+
+    movimentos: list[ParsedMovement] = []
+    counter: dict[date, int] = {}
+    for dm, dv, desc, montante, saldo in chrono:
+        n = counter.get(dm, 0)
+        counter[dm] = n + 1
+        movimentos.append(ParsedMovement(dm, dv, desc, montante, saldo, n))
+
+    return ParsedStatement(
+        moeda=moeda,
+        periodo_inicio=periodo_inicio or movimentos[0].data_movimento,
+        periodo_fim=periodo_fim or movimentos[-1].data_movimento,
+        ordem_ficheiro=ordem,
+        ordem_ambigua=ambigua,
+        saldo_inicial=chrono[0][4] - chrono[0][3],
+        saldo_final=chrono[-1][4],
+        movimentos=movimentos,
+        quebras=chronological_breaks([(r[3], r[4]) for r in chrono]),
+    )
+
+
 class BankinterCsvParser:
     bank_id = BANK_ID
 
@@ -104,136 +239,6 @@ class BankinterCsvParser:
     def parse(self, content: bytes) -> ParsedStatement:
         text = _decode(content)
         rows = _rows(text)
-        h = _find_header(rows)
-        if h is None:
-            if _find_header(_rows(text, ";")) is not None:
-                raise _fail(["O ficheiro usa «;» como separador de campos; o export do Bankinter usa «,»."])
-            raise _fail(["Não encontrei a linha de colunas «Data Movimento, Data Valor, Descrição, …»."])
-        found = [c.strip() for c in rows[h]]
-        while found and not found[-1]:
-            found.pop()
-        if [c.casefold() for c in found] != [c.casefold() for c in EXPECTED_HEADER]:
-            raise _fail(
-                [
-                    "As colunas não correspondem ao modelo do Bankinter.",
-                    "Esperado: " + ", ".join(EXPECTED_HEADER) + ".",
-                    "Encontrado: " + ", ".join(found) + ".",
-                ]
-            )
-        idx = {name: i for i, name in enumerate(c.casefold() for c in EXPECTED_HEADER)}
-
-        moeda = periodo_inicio = periodo_fim = None
-        for r in rows[:h]:
-            line = " ".join(r)
-            if moeda is None and (m := _CURRENCY_RE.search(line)):
-                moeda = m.group(1)
-            if periodo_inicio is None and (m := _PERIOD_RE.search(line)):
-                periodo_inicio, periodo_fim = _parse_date(m.group(1)), _parse_date(m.group(2))
-
-        # Problemas agregados por tipo («N ocorrências; primeira na linha L, «exemplo»»): um ficheiro de um ano com
-        # ponto decimal daria centenas de queixas iguais.
-        agg: dict[str, dict] = {}
-
-        def bad(key: str, texto: str, lineno: int, ex: str = "") -> None:
-            a = agg.setdefault(key, {"n": 0, "linha": lineno, "ex": ex, "texto": texto})
-            a["n"] += 1
-
-        cells: list[tuple[date, date | None, str, str, str]] = []
-        for lineno, r in enumerate(rows[h + 1 :], start=h + 2):
-            first = r[0].strip() if r else ""
-            if _DATE_LIKE_RE.match(first) and not _DATE_RE.match(first):
-                bad(
-                    "data_fmt",
-                    "Data num formato inesperado (esperado dd-mm-aaaa, ex.: 05-10-2026)",
-                    lineno,
-                    first,
-                )
-                continue
-            if not _DATE_RE.match(first):
-                break  # fim dos dados (linha em branco ou rodapé)
-            if len(r) <= idx["saldo"]:
-                bad(
-                    "cols",
-                    f"Linha com colunas a menos (esperado {len(EXPECTED_HEADER)})",
-                    lineno,
-                    str(len(r)),
-                )
-                continue
-            vd = r[idx["data valor"]].strip()
-            if not _DATE_RE.match(vd):
-                bad("data_valor", "Data Valor fora do formato dd-mm-aaaa", lineno, vd)
-                continue
-            mo = r[idx["moeda"]].strip()
-            if mo != (moeda or "EUR"):
-                bad("moeda", f"Moeda diferente de {moeda or 'EUR'}", lineno, mo)
-            ok = True
-            for col in ("montante", "saldo"):
-                v = r[idx[col]].strip()
-                if not _AMOUNT_RE.match(v):
-                    tipo, porque = _why_bad_amount(v)
-                    bad(f"{col}:{tipo}", f"{col.capitalize()} {porque}", lineno, v)
-                    ok = False
-            try:
-                dm, dvd = _parse_date(first), _parse_date(vd)
-            except ValueError:
-                bad("data_invalida", "Data inválida (dia ou mês inexistente)", lineno, f"{first} / {vd}")
-                continue
-            if ok:
-                cells.append(
-                    (
-                        dm,
-                        dvd,
-                        r[idx["descrição"]].strip(),
-                        r[idx["montante"]].strip(),
-                        r[idx["saldo"]].strip(),
-                    )
-                )
-
-        if periodo_inicio and periodo_fim:
-            for dm, *_ in cells:
-                if not (periodo_inicio <= dm <= periodo_fim):
-                    bad(
-                        "periodo",
-                        f"Datas fora do período indicado no cabeçalho ({periodo_inicio:%d-%m-%Y} a {periodo_fim:%d-%m-%Y})",
-                        0,
-                        f"{dm:%d-%m-%Y}",
-                    )
-        if agg:
-            raise _fail(
-                [
-                    f"{a['texto']} — {a['n']} ocorrência(s)"
-                    + (f"; primeira na linha {a['linha']}" if a["linha"] else "")
-                    + (f", «{a['ex']}»" if a["ex"] else "")
-                    + "."
-                    for a in agg.values()
-                ]
-            )
-        if not cells:
-            raise _fail(["Nenhum movimento encontrado depois da linha de colunas."])
-
-        raw = [
-            (dm, dv, desc, Decimal(m.replace(",", ".")), Decimal(sd.replace(",", ".")))
-            for dm, dv, desc, m, sd in cells
-        ]
-
-        ordem, ambigua = detect_order([(r[3], r[4]) for r in raw])
-        chrono = raw if ordem == "asc" else raw[::-1]
-
-        movimentos: list[ParsedMovement] = []
-        counter: dict[date, int] = {}
-        for dm, dv, desc, montante, saldo in chrono:
-            n = counter.get(dm, 0)
-            counter[dm] = n + 1
-            movimentos.append(ParsedMovement(dm, dv, desc, montante, saldo, n))
-
-        return ParsedStatement(
-            moeda=moeda,
-            periodo_inicio=periodo_inicio or movimentos[0].data_movimento,
-            periodo_fim=periodo_fim or movimentos[-1].data_movimento,
-            ordem_ficheiro=ordem,
-            ordem_ambigua=ambigua,
-            saldo_inicial=chrono[0][4] - chrono[0][3],
-            saldo_final=chrono[-1][4],
-            movimentos=movimentos,
-            quebras=chronological_breaks([(r[3], r[4]) for r in chrono]),
-        )
+        if _find_header(rows) is None and _find_header(_rows(text, ";")) is not None:
+            raise _fail(["O ficheiro usa «;» como separador de campos; o export do Bankinter usa «,»."])
+        return parse_rows(rows)

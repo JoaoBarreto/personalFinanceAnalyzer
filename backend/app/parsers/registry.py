@@ -1,8 +1,10 @@
-from .banks.bankinter.csv_export import BankinterCsvParser
+from .banks.bankinter.parser import BankinterParser
 from .base import StatementParser
 
+_bankinter = BankinterParser()
 PARSERS: dict[str, StatementParser] = {
-    "bankinter_csv": BankinterCsvParser(),
+    "bankinter": _bankinter,
+    "bankinter_csv": _bankinter,  # nome antigo das contas já criadas; mesmo parser (.xls ou CSV, por conteúdo)
 }
 
 

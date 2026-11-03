@@ -451,3 +451,67 @@ def test_listar_linhas_de_um_grupo(api, db):
         params={"descricao_normalizada": "CONTINENTE MODELO LISBOA", "sem_categoria": True},
     ).json()
     assert r["total"] == 2 and {t["montante"] for t in r["items"]} == {"-40.00", "-31.00"}
+
+
+def _muitas_regras(api, db, n=30):
+    sup, alim = cat_id(db, "Supermercado"), cat_id(db, "Restaurantes")
+    for i in range(n):
+        api.post("/api/rules", json={"padrao": f"LOJA{i:02d}", "categoria_id": sup if i % 2 == 0 else alim})
+    api.post("/api/rules", json={"padrao": "CAFÉ CENTRAL", "categoria_id": alim, "prioridade": 500})
+
+
+def test_pesquisa_e_paginacao_de_regras(api, db):
+    _muitas_regras(api, db)
+    p1 = api.get("/api/rules/search", params={"page_size": 10}).json()
+    assert p1["total"] == 31 and len(p1["items"]) == 10 and p1["page"] == 1
+    assert p1["items"][0]["padrao"] == "CAFE CENTRAL"  # prioridade mais alta primeiro; guardado normalizado
+    assert p1["items"][0]["categoria_nome"] == "Restaurantes"
+    p4 = api.get("/api/rules/search", params={"page_size": 10, "page": 4}).json()
+    assert len(p4["items"]) == 1 and p4["total"] == 31  # 31 = 3 páginas de 10 + 1
+    todos = [
+        x["id"]
+        for pg in (1, 2, 3, 4)
+        for x in api.get("/api/rules/search", params={"page_size": 10, "page": pg}).json()["items"]
+    ]
+    assert len(set(todos)) == 31  # sem repetidas nem em falta entre páginas
+    assert api.get("/api/rules/search", params={"page_size": 10, "page": 9}).json()["items"] == []
+
+
+def test_pesquisa_por_palavra_chave_categoria_e_filtros(api, db):
+    _muitas_regras(api, db)
+    s = lambda **p: api.get("/api/rules/search", params=p).json()
+    assert [x["padrao"] for x in s(q="loja07")["items"]] == ["LOJA07"]  # sem distinguir maiúsculas
+    assert [x["padrao"] for x in s(q="café")["items"]] == ["CAFE CENTRAL"]  # sem acentos
+    assert s(q="Restaurantes")["total"] == 16  # pelo nome da categoria (15 + CAFE CENTRAL)
+    assert s(categoria_id=cat_id(db, "Supermercado"))["total"] == 15
+    assert s(origem="aprendida")["total"] == 0 and s(origem="manual")["total"] == 31
+    tid = s(q="LOJA01")["items"][0]["id"]
+    api.patch(f"/api/rules/{tid}", json={"ativa": False})
+    assert s(ativa=False)["total"] == 1 and s(ativa=True)["total"] == 30
+    assert s(q="%")["total"] == 0 and s(q="_")["total"] == 0  # curingas tratados como texto
+    assert api.get("/api/rules/search", params={"origem": "xpto"}).status_code == 422
+
+
+def test_editar_a_categoria_de_uma_regra_e_aplicar_aos_movimentos(api, db):
+    sup, alim = cat_id(db, "Supermercado"), cat_id(db, "Restaurantes")
+    r = mk_rule(api, categoria_id=sup)  # SUPERMERCADO -> Supermercado
+    import_all(api)
+    assert txs(api, q="SUPERMERCADO")["items"][0]["categoria_id"] == sup
+    api.patch(f"/api/rules/{r['id']}", json={"categoria_id": alim})  # editar a categoria da regra
+    assert (
+        api.get("/api/rules/search", params={"q": "SUPERMERCADO"}).json()["items"][0]["categoria_nome"]
+        == "Restaurantes"
+    )
+    # os movimentos já categorizados mantêm a categoria antiga até se aplicar; o impacto di-lo
+    assert txs(api, q="SUPERMERCADO")["items"][0]["categoria_id"] == sup
+    assert api.post(f"/api/rules/{r['id']}/preview-impact").json()["afetados"] == 1
+    assert api.post("/api/rules/apply").json()["movimentos_alterados"] == 1
+    t = txs(api, q="SUPERMERCADO")["items"][0]
+    assert t["categoria_id"] == alim and t["categoria_origem"] == "regra"
+    # editar a palavra-chave e a prioridade também funciona, e valida
+    ok = api.patch(
+        f"/api/rules/{r['id']}",
+        json={"padrao": "Super Mercado", "prioridade": 300, "tipo_match": "comeca_por"},
+    )
+    assert ok.json()["padrao"] == "SUPER MERCADO" and ok.json()["prioridade"] == 300
+    assert api.patch(f"/api/rules/{r['id']}", json={"padrao": "X"}).status_code == 422

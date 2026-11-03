@@ -36,7 +36,7 @@ export default function Accounts() {
         onSubmit={(e) => {
           e.preventDefault();
           void wrap(async () => {
-            await api.post("/api/accounts", { nome, banco, parser_id: "bankinter_csv", titular_id: titular ? Number(titular) : null });
+            await api.post("/api/accounts", { nome, banco, parser_id: "bankinter", titular_id: titular ? Number(titular) : null });
             setNome("");
             accounts.reload();
           });

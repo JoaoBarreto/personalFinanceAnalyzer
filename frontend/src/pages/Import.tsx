@@ -36,7 +36,7 @@ export default function Import() {
     try { await fn(); } catch (e) { setErr(errorMessage(e)); } finally { setBusy(false); }
   };
   const createAccount = () => wrap(async () => {
-    await api.post("/api/accounts", { nome: "Bankinter Ordenado", banco: "Bankinter", parser_id: "bankinter_csv" });
+    await api.post("/api/accounts", { nome: "Bankinter Ordenado", banco: "Bankinter", parser_id: "bankinter" });
     accounts.reload();
   });
   const upload = (file: File) => wrap(async () => {
@@ -81,9 +81,9 @@ export default function Import() {
               {accounts.data.map((a) => <option key={a.id} value={a.id}>{a.nome}</option>)}
             </select>
           )}
-          <p>Largue aqui o CSV exportado do homebanking, ou</p>
+          <p>Largue aqui o ficheiro <strong>.xls</strong> exportado do homebanking (sem o abrir noutra aplicação), ou</p>
           <button className="primary" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? "A processar…" : "Escolher ficheiro"}</button>
-          <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
+          <input ref={fileRef} type="file" accept=".xls,application/vnd.ms-excel,.csv,text/csv" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
         </div>
       )}
       {done && (
