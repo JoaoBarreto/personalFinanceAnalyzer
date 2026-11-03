@@ -515,3 +515,77 @@ def test_editar_a_categoria_de_uma_regra_e_aplicar_aos_movimentos(api, db):
     )
     assert ok.json()["padrao"] == "SUPER MERCADO" and ok.json()["prioridade"] == 300
     assert api.patch(f"/api/rules/{r['id']}", json={"padrao": "X"}).status_code == 422
+
+
+def _corretora(api):
+    """O caso real: a transferência para a corretora e a COMISSÃO dessa transferência (ambas com o nome dela)."""
+    import_all(
+        api,
+        [
+            ("08-10-2026", "08-10-2026", "TRF A CREDITO SEPA+ - INTERACTIVE BROKER", D("-650.00")),
+            ("08-10-2026", "08-10-2026", "COMISS TRF CRED SEPA+ - INTERACTIVE BROK", D("-0.50")),
+            ("08-11-2026", "08-11-2026", "TRF A CREDITO SEPA+ - INTERACTIVE BROKER", D("-650.00")),
+            ("08-11-2026", "08-11-2026", "COMISS TRF CRED SEPA+ - INTERACTIVE BROK", D("-0.50")),
+        ],
+    )
+
+
+def test_regra_demasiado_larga_corrige_se_e_as_linhas_erradas_sao_libertadas(api, db):
+    _corretora(api)
+    transf = cat_id(db, "Transferências entre contas")
+    r = mk_rule(api, padrao="INTERACTIVE", categoria_id=transf)  # «contém»: apanha também as comissões
+    api.post("/api/rules/apply")
+    assert {t["categoria_nome"] for t in txs(api)["items"]} == {
+        "Transferências entre contas"
+    }  # tudo, mesmo as comissões
+
+    api.patch(
+        f"/api/rules/{r['id']}", json={"tipo_match": "comeca_por"}
+    )  # só a transferência começa pelo nome
+    res = api.post("/api/rules/apply").json()
+    assert res["libertados"] == 2  # as 2 comissões já não são apanhadas
+    por_desc = {}
+    for t in txs(api)["items"]:
+        por_desc.setdefault(t["descricao_normalizada"], []).append(t)
+    assert all(t["categoria_id"] is None for t in por_desc["COMISS TRF CRED SEPA+ - INTERACTIVE BROK"])
+    assert all(t["categoria_id"] == transf for t in por_desc["INTERACTIVE BROKER"])  # as transferências ficam
+    # e aparecem em «Por categorizar», prontas a categorizar de uma vez
+    g = api.get("/api/transactions/uncategorized", params={"group_by": "description"}).json()["grupos"]
+    assert [x["n"] for x in g if x["descricao_normalizada"].startswith("COMISS")] == [2]
+
+
+def test_o_historico_nao_reatribui_o_que_a_regra_libertou(api, db):
+    """Sem isto, as comissões libertadas voltavam à categoria errada pelo «histórico» das próprias linhas."""
+    _corretora(api)
+    r = mk_rule(api, padrao="INTERACTIVE", categoria_id=cat_id(db, "Transferências entre contas"))
+    api.post("/api/rules/apply")
+    api.patch(f"/api/rules/{r['id']}", json={"tipo_match": "comeca_por"})
+    api.post("/api/rules/apply")
+    api.post("/api/rules/apply")  # repetir não as volta a categorizar
+    assert [t["categoria_id"] for t in txs(api, q="COMISS")["items"]] == [None, None]
+
+
+def test_regra_desativada_liberta_as_suas_linhas_mas_apagada_mantem(api, db):
+    sup = cat_id(db, "Supermercado")
+    a = mk_rule(api, padrao="SUPERMERCADO", categoria_id=sup)
+    b = mk_rule(api, padrao="EMPRESA", categoria_id=cat_id(db, "Salário"))
+    import_all(api)
+    api.patch(f"/api/rules/{a['id']}", json={"ativa": False})
+    api.delete(f"/api/rules/{b['id']}")
+    res = api.post("/api/rules/apply").json()
+    assert res["libertados"] == 1  # só a da regra desativada
+    assert txs(api, q="SUPERMERCADO")["items"][0]["categoria_id"] is None
+    assert (
+        txs(api, q="EMPRESA")["items"][0]["categoria_id"] is not None
+    )  # regra apagada: a categoria mantém-se
+
+
+def test_apply_nunca_liberta_categorizacoes_manuais(api, db):
+    sup = cat_id(db, "Supermercado")
+    r = mk_rule(api, padrao="SUPERMERCADO", categoria_id=sup)
+    import_all(api)
+    tid = txs(api, q="SUPERMERCADO")["items"][0]["id"]
+    api.patch(f"/api/transactions/{tid}", json={"categoria_id": cat_id(db, "Restaurantes")})  # manual
+    api.patch(f"/api/rules/{r['id']}", json={"ativa": False})
+    assert api.post("/api/rules/apply").json()["libertados"] == 0
+    assert txs(api, q="SUPERMERCADO")["items"][0]["categoria_origem"] == "manual"

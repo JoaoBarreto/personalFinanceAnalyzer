@@ -87,10 +87,14 @@ def load_rules(db: Session) -> list[RuleData]:
 
 
 def history_map(db: Session) -> dict[str, int]:
-    """descricao_normalizada -> categoria mais frequente (desempate: a mais recente) já atribuída."""
+    """descricao_normalizada -> categoria mais frequente (desempate: a mais recente) escolhida À MÃO.
+
+    Só contam as escolhas manuais: as categorias vindas de regras já estão nas regras, e se contassem aqui, uma
+    categorização antiga de uma regra editada voltava a ser sugerida pelo histórico (circular).
+    """
     q = (
         select(Movimento.descricao_normalizada, Movimento.categoria_id, func.count(), func.max(Movimento.id))
-        .where(Movimento.categoria_id.is_not(None))
+        .where(Movimento.categoria_origem == "manual")
         .group_by(Movimento.descricao_normalizada, Movimento.categoria_id)
     )
     best: dict[str, tuple[int, int, int]] = {}
@@ -100,13 +104,27 @@ def history_map(db: Session) -> dict[str, int]:
     return {d: v[2] for d, v in best.items()}
 
 
+@dataclass
+class CategorizeResult:
+    applied: dict[int, int]  # regra_id -> nº de linhas atribuídas
+    released: int = (
+        0  # linhas que voltaram a «por categorizar» porque a regra que as categorizou já não se aplica
+    )
+
+
 def categorize(
     db: Session, movs: list[Movimento], *, only_uncategorized: bool, rules: list[RuleData] | None = None
-) -> dict[int, int]:
-    """Aplica regras e depois histórico. Devolve {regra_id: n atribuições novas}. Ignora sempre `manual`."""
+) -> CategorizeResult:
+    """Aplica regras e depois histórico (escolhas manuais). Ignora sempre `manual`.
+
+    Na reaplicação total (`only_uncategorized=False`), uma linha categorizada por uma regra que entretanto foi
+    editada ou desativada, e que já não a apanha, é libertada (volta a «por categorizar»). As linhas cuja regra foi
+    APAGADA (regra_id nulo) mantêm a categoria.
+    """
     rules = load_rules(db) if rules is None else rules
     hist = history_map(db)
     applied: Counter[int] = Counter()
+    released = 0
     for m in movs:
         if m.categoria_origem == "manual":
             continue
@@ -117,14 +135,16 @@ def categorize(
             if (m.categoria_id, m.categoria_origem, m.regra_id) != (r.categoria_id, "regra", r.id):
                 m.categoria_id, m.categoria_origem, m.regra_id = r.categoria_id, "regra", r.id
                 applied[r.id] += 1
+        elif m.categoria_origem == "regra" and m.regra_id is not None and not only_uncategorized:
+            m.categoria_id = m.categoria_origem = m.regra_id = None
+            released += 1
         elif m.categoria_id is None and (cat := hist.get(m.descricao_normalizada)) is not None:
             m.categoria_id, m.categoria_origem, m.regra_id = cat, "historico", None
-    if applied:
-        for rid, n in applied.items():
-            db.execute(
-                Regra.__table__.update().where(Regra.id == rid).values(n_aplicacoes=Regra.n_aplicacoes + n)
-            )
-    return dict(applied)
+    for rid, n in applied.items():
+        db.execute(
+            Regra.__table__.update().where(Regra.id == rid).values(n_aplicacoes=Regra.n_aplicacoes + n)
+        )
+    return CategorizeResult(dict(applied), released)
 
 
 def impact(db: Session, rule: RuleData, linhas: int = 0) -> dict:

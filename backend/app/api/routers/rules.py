@@ -219,6 +219,10 @@ def preview_impact(rule_id: int, _: Auth = Depends(require_auth), db: Session = 
 def apply_rules(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     """Aplicação retroativa: reavalia regras e histórico em todos os movimentos não-manuais."""
     movs = db.scalars(select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))).all()
-    applied = categorizer.categorize(db, list(movs), only_uncategorized=False)
+    res = categorizer.categorize(db, list(movs), only_uncategorized=False)
     db.commit()
-    return {"movimentos_alterados": sum(applied.values()), "por_regra": applied}
+    return {
+        "movimentos_alterados": sum(res.applied.values()),
+        "libertados": res.released,  # a regra deixou de os apanhar: voltam a «por categorizar»
+        "por_regra": res.applied,
+    }

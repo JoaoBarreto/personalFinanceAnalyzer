@@ -245,8 +245,8 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         db.flush()
         out["regra"] = rule_out(r)
         if retro:
-            applied = categorizer.categorize(db, candidatos, only_uncategorized=False)
-            out["aplicados"] = sum(applied.values())  # outras linhas categorizadas pela nova regra
+            res = categorizer.categorize(db, candidatos, only_uncategorized=False)
+            out["aplicados"] = sum(res.applied.values())  # outras linhas categorizadas pela nova regra
     # tudo o que mudou, com o estado anterior (permite corrigir linha a linha e «Desfazer»)
     por_id = {m.id: m for m in [*movs, *candidatos]}
     nomes = {c.id: c.nome for c in db.scalars(select(Categoria))}

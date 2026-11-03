@@ -68,9 +68,9 @@ export default function Rules() {
     if (imp.afetados === 0) setMsg("Categoria da regra atualizada.");
   });
   const applyAll = () => wrap(async () => {
-    const r = await api.post<{ movimentos_alterados: number }>("/api/rules/apply");
+    const r = await api.post<{ movimentos_alterados: number; libertados: number }>("/api/rules/apply");
     setPending(null);
-    setMsg(`${r.movimentos_alterados} movimento(s) atualizados (categorizações manuais nunca são alteradas).`);
+    setMsg(`${r.movimentos_alterados} movimento(s) atualizados${r.libertados ? `; ${r.libertados} voltaram a «Por categorizar» porque a regra que os categorizou deixou de se aplicar` : ""}. As categorizações feitas à mão nunca são alteradas.`);
   });
   const startEdit = (r: Rule) => { setEditing(r.id); setDraft({ padrao: r.padrao, tipo_match: r.tipo_match, prioridade: r.prioridade }); };
   const saveEdit = (r: Rule) => wrap(async () => {
@@ -142,7 +142,7 @@ export default function Rules() {
                   <td>{cats.data && <CategorySelect aria-label={`Categoria da regra ${r.padrao}`} categories={cats.data} value={r.categoria_id} onChange={(id) => changeCategory(r, id)} emptyLabel={r.categoria_nome} />}</td>
                   <td className="num">{ed ? <input type="number" aria-label="Prioridade" value={draft.prioridade} onChange={(e) => setDraft({ ...draft, prioridade: Number(e.target.value) })} style={{ width: "5rem" }} /> : r.prioridade}</td>
                   <td>{r.origem}</td><td className="num">{r.n_aplicacoes}</td>
-                  <td><input type="checkbox" checked={r.ativa} aria-label={`Ativar ${r.padrao}`} onChange={(e) => wrap(async () => { await api.patch(`/api/rules/${r.id}`, { ativa: e.target.checked }); list.reload(); })} /></td>
+                  <td><input type="checkbox" checked={r.ativa} aria-label={`Ativar ${r.padrao}`} onChange={(e) => wrap(async () => { await api.patch(`/api/rules/${r.id}`, { ativa: e.target.checked }); setMsg("Regra atualizada. Use «Aplicar a movimentos existentes» para refletir a alteração nos movimentos já importados."); list.reload(); })} /></td>
                   <td className="actions">
                     {ed ? (<><button className="link" onClick={() => saveEdit(r)}>Guardar</button><button className="link" onClick={() => setEditing(null)}>Cancelar</button></>)
                         : (<><button className="link" onClick={() => startEdit(r)}>Editar</button>

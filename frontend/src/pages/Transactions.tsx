@@ -5,8 +5,11 @@ import CategorySelect from "../components/CategorySelect";
 import TitularSelect from "../components/TitularSelect";
 import { useAsync } from "../hooks";
 import { dataPt, eur } from "../lib/format";
+import { suggestKeyword } from "../lib/keyword";
 
 type Page = { total: number; page: number; page_size: number; items: Tx[] };
+type Changed = { id: number; anterior: { categoria_id: number | null; categoria_origem: string | null; regra_id: number | null } };
+type BulkResult = { categorizados: number; aplicados: number; regra: { id: number } | null; alteradas: Changed[] };
 
 export default function Transactions() {
   const [sp, setSp] = useSearchParams();
@@ -38,6 +41,50 @@ export default function Transactions() {
     } catch (e) {
       setErr(errorMessage(e));
     }
+  };
+  // --- seleção múltipla e categorização em lote ---
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [bulkCat, setBulkCat] = useState<number | null>(null);
+  const [makeRule, setMakeRule] = useState(false);
+  const [kw, setKw] = useState("");
+  const [tipo, setTipo] = useState<"contem" | "comeca_por">("comeca_por");
+  const [done, setDone] = useState<{ msg: string; alteradas: Changed[]; regraId: number | null } | null>(null);
+  useEffect(() => { setSel(new Set()); }, [sp.toString()]);
+  const items = list.data?.items ?? [];
+  const firstSel = items.find((t) => sel.has(t.id));
+  useEffect(() => { if (makeRule && firstSel) setKw(suggestKeyword(firstSel.descricao_normalizada)); }, [makeRule, firstSel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (id: number) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allOnPage = items.length > 0 && items.every((t) => sel.has(t.id));
+  const selectAllFiltered = async () => {
+    try {
+      const ids: number[] = [];
+      for (let p = 1; ids.length < (list.data?.total ?? 0) && p <= 20; p++) {
+        const r = await api.get<Page>("/api/transactions", { ...f, page: p, page_size: 200 });
+        ids.push(...r.items.map((t) => t.id));
+      }
+      setSel(new Set(ids));
+    } catch (e) { setErr(errorMessage(e)); }
+  };
+  const applyBulk = async () => {
+    if (!bulkCat) return setErr("Escolha a categoria.");
+    try {
+      setErr(null);
+      const r = await api.post<BulkResult>("/api/transactions/bulk-categorize", {
+        ids: [...sel], categoria_id: bulkCat,
+        criar_regra: makeRule ? { padrao: kw, tipo_match: tipo, aplicar_retroativamente: true } : undefined,
+      });
+      const nome = cats.data?.find((c) => c.id === bulkCat)?.nome ?? "";
+      setDone({ msg: `${r.categorizados} linha(s) categorizada(s) como «${nome}»${r.aplicados ? ` + ${r.aplicados} de outras descrições pela nova regra` : ""}.`, alteradas: r.alteradas, regraId: r.regra?.id ?? null });
+      setSel(new Set()); setBulkCat(null); setMakeRule(false);
+      list.reload();
+    } catch (e) { setErr(errorMessage(e)); }
+  };
+  const undo = async () => {
+    if (!done) return;
+    try {
+      await api.post("/api/transactions/restore", { itens: done.alteradas.map((a) => ({ id: a.id, ...a.anterior })), apagar_regra_id: done.regraId });
+      setDone(null); list.reload();
+    } catch (e) { setErr(errorMessage(e)); }
   };
   const remove = (keys: string[]) => { const n = new URLSearchParams(sp); keys.forEach((k) => n.delete(k)); n.delete("page"); setSp(n); };
   const catNome = cats.data?.find((c) => String(c.id) === f.categoria_id)?.nome;
@@ -76,12 +123,38 @@ export default function Transactions() {
         </div>
       )}
       {(err || list.error) && <p className="error" role="alert">{err ?? list.error}</p>}
+      {done && (
+        <div className="card last" role="status">
+          <strong className="ok">{done.msg}</strong>{" "}
+          <button onClick={undo}>Desfazer</button>{" "}
+          <button className="link" onClick={() => setDone(null)} aria-label="Fechar">✕</button>
+        </div>
+      )}
+      {sel.size > 0 && (
+        <div className="card bulkbar" role="region" aria-label="Categorizar selecionadas">
+          <strong>{sel.size} selecionada(s)</strong>
+          {list.data && sel.size < list.data.total && <button className="link" onClick={selectAllFiltered}>Selecionar as {list.data.total} do filtro</button>}
+          {cats.data && <CategorySelect aria-label="Categoria para as selecionadas" categories={cats.data} value={bulkCat} onChange={setBulkCat} emptyLabel="Categoria…" />}
+          <label className="check"><input type="checkbox" checked={makeRule} onChange={(e) => setMakeRule(e.target.checked)} /> Criar regra</label>
+          {makeRule && (
+            <>
+              <input aria-label="Palavra-chave" value={kw} onChange={(e) => setKw(e.target.value)} style={{ width: "10rem" }} />
+              <select aria-label="Tipo" value={tipo} onChange={(e) => setTipo(e.target.value as "contem" | "comeca_por")}>
+                <option value="comeca_por">começa por</option><option value="contem">contém</option>
+              </select>
+            </>
+          )}
+          <button className="primary" disabled={!bulkCat} onClick={applyBulk}>Categorizar {sel.size}</button>
+          <button className="link" onClick={() => setSel(new Set())}>Limpar seleção</button>
+        </div>
+      )}
       <div className="card flush">
         <table className="data tx">
-          <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th className="num">Montante</th><th className="num hide-sm">Saldo</th></tr></thead>
+          <thead><tr><th className="c-sel"><input type="checkbox" aria-label="Selecionar todas as desta página" checked={allOnPage} onChange={() => setSel(allOnPage ? new Set() : new Set(items.map((t) => t.id)))} /></th><th>Data</th><th>Descrição</th><th>Categoria</th><th className="num">Montante</th><th className="num hide-sm">Saldo</th></tr></thead>
           <tbody>
             {list.data?.items.map((t) => (
-              <tr key={t.id}>
+              <tr key={t.id} className={sel.has(t.id) ? "selected" : ""}>
+                <td className="c-sel"><input type="checkbox" aria-label={`Selecionar ${t.descricao_normalizada}`} checked={sel.has(t.id)} onChange={() => toggle(t.id)} /></td>
                 <td className="c-date">{dataPt(t.data_movimento)}</td>
                 <td className="c-desc" title={t.descricao_original}>{t.descricao_normalizada}{t.categoria_origem === "manual" && <span className="tag" title={`Categorizado manualmente${nomeDe(t.atualizado_por) ? ` por ${nomeDe(t.atualizado_por)}` : ""}`}>manual</span>}</td>
                 <td className="c-cat">{cats.data && <CategorySelect aria-label={`Categoria de ${t.descricao_normalizada}`} categories={cats.data} value={t.categoria_id} onChange={(id) => setCat(t, id)} />}</td>
@@ -89,7 +162,7 @@ export default function Transactions() {
                 <td className="num muted hide-sm">{eur(t.saldo_apos)}</td>
               </tr>
             ))}
-            {list.data?.items.length === 0 && <tr><td colSpan={5} className="muted">Sem movimentos.</td></tr>}
+            {list.data?.items.length === 0 && <tr><td colSpan={6} className="muted">Sem movimentos.</td></tr>}
           </tbody>
         </table>
       </div>
