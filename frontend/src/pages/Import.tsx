@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, errorMessage, type Account } from "../api";
 import { CoverageSummary } from "../components/Coverage";
@@ -31,6 +31,11 @@ export default function Import() {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const conta = contaId ?? accounts.data?.[0]?.id ?? null;
+  // vindo do assistente «Adicionar conta»: a pré-visualização já foi criada, abre-a
+  const previewId = sp.get("preview");
+  useEffect(() => {
+    if (previewId) void api.get<Preview>(`/api/imports/${previewId}`).then(setPreview).catch((e) => setErr(errorMessage(e)));
+  }, [previewId]);
 
   const wrap = async (fn: () => Promise<void>) => {
     setBusy(true); setErr(null);
