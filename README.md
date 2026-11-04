@@ -76,9 +76,10 @@ Opcionais, só no backend: `REGISTER_MAX` (20) e `REGISTER_WINDOW_SECONDS` (3600
 
 ## Versões e atualização
 
-- **Ramo `main`** e **tag `release-monoutilizador`**: a versão de um só utilizador (0.1.x), estável.
-- **Ramo `multiutilizador`** (0.2.0): isolamento por utilizador, assistente «Adicionar conta», importação de qualquer banco e novos KPIs.
-- **Atualizar da versão de um só utilizador para a 0.2.0** altera o esquema da base de dados (migração `0006`): tudo o que existe (contas, regras, categorias, movimentos) passa para o utilizador de menor id, e a versão antiga já não corre sobre a base migrada. Faça **backup** antes e, de preferência, **teste primeiro numa instalação ao lado** com uma cópia dos dados (o `scripts/install.sh` faz o backup e o restauro por si). O downgrade da migração só funciona com um utilizador.
+- **Ramo `main`**: a versão 1.0 (a atual).
+- **Tag `release-monoutilizador`**: a versão anterior, de um só utilizador (0.x), guardada como ponto de retorno.
+- **O que a 1.0 trouxe**: isolamento por utilizador, registo no ecrã de login, assistente «Adicionar conta», importação de qualquer banco e novos KPIs.
+- **Atualizar da versão de um só utilizador (tag `release-monoutilizador`) para a 1.0** altera o esquema da base de dados (migração `0006`): tudo o que existe (contas, regras, categorias, movimentos) passa para o utilizador de menor id, e a versão antiga já não corre sobre a base migrada. Faça **backup** antes e, de preferência, **teste primeiro numa instalação ao lado** com uma cópia dos dados (o `scripts/install.sh` faz o backup e o restauro por si). O downgrade da migração só funciona com um utilizador.
 
 ## Operação
 

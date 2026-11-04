@@ -1,13 +1,13 @@
 # PRD: WebApp de Análise de Extratos Bancários com Regras Locais
 
 > **Versão:** 2.2 (contradições resolvidas e esquema da Fase 1 fechado; ver secções 4 e 10)
-> **Estado:** MVP implementado e em uso; a versão 0.2.0 (ramo `multiutilizador`) diverge desta especificação nos pontos do quadro seguinte.
+> **Estado:** MVP implementado e em uso; a versão 1.0 diverge desta especificação nos pontos do quadro seguinte.
 > **Âmbito:** Uso pessoal ou familiar (vários utilizadores, cada um com os seus dados), self-hosted em Docker num mini-PC, com acesso remoto via Tailscale e sem dependência de APIs pagas.
 > **Banco no MVP:** Bankinter Portugal.
 
 ---
 
-## Alterações face a esta especificação (v0.2.0, 2026-11)
+## Alterações face a esta especificação (v1.0, 2026-11)
 
 Esta especificação descreve o desenho inicial. O que está implementado diverge nos pontos abaixo; quando houver conflito, **vale esta lista** (e o `CLAUDE.md`, que tem os detalhes técnicos).
 
