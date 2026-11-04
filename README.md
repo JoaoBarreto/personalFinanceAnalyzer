@@ -1,12 +1,12 @@
 # personalFinanceAnalyzer
 
-WebApp self-hosted (Docker Compose) para importar extratos bancários do Bankinter, reconciliar saldos, categorizar movimentos com regras locais e ver um dashboard (receitas, despesas, poupança, reserva, investido). Todos os dados ficam na máquina do utilizador, sem APIs externas.
+WebApp self-hosted (Docker Compose) para importar extratos bancários (Bankinter com parser dedicado; qualquer outro banco com extrato tabular e coluna de saldo), reconciliar saldos, categorizar movimentos com regras locais e ver um dashboard (receitas, despesas, poupança, reserva, investido). Todos os dados ficam na máquina do utilizador, sem APIs externas.
 
 Especificação completa: [PersonalFinances.md](PersonalFinances.md). Notas de trabalho para desenvolvimento: [CLAUDE.md](CLAUDE.md).
 
 ## O que faz
 
-- **Importar** o `.xls` original do Bankinter (também aceita o CSV do modelo exato). A importação é **estrita**: qualquer desvio ao formato do banco é recusado e nada é gravado. Não guarde o ficheiro noutra aplicação antes de o importar.
+- **Importar** o `.xls` original do Bankinter (também aceita o CSV do modelo exato) ou o extrato de **qualquer outro banco** (.xls, .xlsx ou .csv com coluna de saldo): em «Adicionar conta» a app deteta o formato, verifica-o pela cadeia de saldos e pede confirmação com exemplos. A importação é **estrita**: qualquer desvio ao formato guardado é recusado e nada é gravado. Não guarde o ficheiro noutra aplicação antes de o importar.
 - **Reconciliar** pela cadeia de saldos do ficheiro, avisar de buracos entre extratos e evitar duplicados quando os períodos se sobrepõem.
 - **Categorizar**: regras (contém, começa por, igual, regex), histórico e categorização em lote por comerciante. As escolhas manuais nunca são sobrescritas e sobrevivem a reimportações.
 - **Dashboard**: receitas, despesas, poupança, taxa de poupança, reserva (meses), dinheiro investido/poupado fora da conta, evolução mensal, despesas por categoria.
@@ -66,16 +66,23 @@ Em http o cookie não pode ser `Secure`: com `COOKIE_SECURE=auto` isto trata-se 
 | `COOKIE_SECURE` | `auto` | `auto`: Secure só por HTTPS; `true`/`false` forçam. |
 | `TRUSTED_PROXIES` | vazio | IPs de proxies de confiança para ler `X-Forwarded-For`. |
 | `FRONTEND_PORT` | `8080` | Porta no host (só em 127.0.0.1) do nginx. |
+| `COMPOSE_PROJECT_NAME` | nome da pasta | Isola contentores e volumes: é o que permite duas instâncias lado a lado (cada uma na sua pasta). Escrito pelo `scripts/install.sh`. |
 | `LAN_BIND_IP` | vazio | IP da LAN, só com `docker-compose.lan.yml`. |
 
 Opcionais, só no backend: `DATABASE_URL` (substitui as variáveis `POSTGRES_*`), `ENABLE_DOCS=true` (liga `/docs` e `/openapi.json`, desligados por omissão), `SESSION_TTL_DAYS` (14), `LOGIN_MAX_FAILURES` (5) e `LOGIN_WINDOW_SECONDS` (300).
+
+## Versões e atualização
+
+- **Ramo `main`** e **tag `release-monoutilizador`**: a versão de um só utilizador (0.1.x), estável.
+- **Ramo `multiutilizador`** (0.2.0): isolamento por utilizador, assistente «Adicionar conta», importação de qualquer banco e novos KPIs.
+- **Atualizar da versão de um só utilizador para a 0.2.0** altera o esquema da base de dados (migração `0006`): tudo o que existe (contas, regras, categorias, movimentos) passa para o utilizador de menor id, e a versão antiga já não corre sobre a base migrada. Faça **backup** antes e, de preferência, **teste primeiro numa instalação ao lado** com uma cópia dos dados (o `scripts/install.sh` faz o backup e o restauro por si). O downgrade da migração só funciona com um utilizador.
 
 ## Operação
 
 - **Atualizar**: `git pull && docker compose up -d --build`. As migrações correm no arranque do backend; os dados mantêm-se no volume `pgdata`.
 - **Nunca** correr `docker compose down -v`: apaga o volume `pgdata` e todos os dados. `docker compose down` (sem `-v`) é seguro.
 - **Repor movimentos** de UM utilizador (apaga os seus movimentos e importações, mantém categorias, regras, contas e utilizadores; as categorizações manuais voltam a aplicar-se ao reimportar): `make reset-data USERNAME=joao`.
-- **Backup**: ainda não está automatizado. Por agora, copie a base de dados à mão e guarde a cópia fora da máquina:
+- **Backup**: ainda não está automatizado (o `scripts/install.sh` consegue fazer um backup pontual de uma instância). Por agora, copie a base de dados à mão e guarde a cópia fora da máquina:
   ```bash
   docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-$(date +%F).sql
   ```

@@ -1,9 +1,26 @@
 # PRD: WebApp de Análise de Extratos Bancários com Regras Locais
 
 > **Versão:** 2.2 (contradições resolvidas e esquema da Fase 1 fechado; ver secções 4 e 10)
-> **Estado:** Pronto para arrancar o MVP, a aguardar os fixtures reais do Bankinter para validar o parser
+> **Estado:** MVP implementado e em uso; a versão 0.2.0 (ramo `multiutilizador`) diverge desta especificação nos pontos do quadro seguinte.
 > **Âmbito:** Uso pessoal (2 utilizadores do mesmo agregado), self-hosted em Docker num mini-PC, com acesso remoto via Tailscale e sem dependência de APIs pagas.
 > **Banco no MVP:** Bankinter Portugal.
+
+---
+
+## Alterações face a esta especificação (v0.2.0, 2026-11)
+
+Esta especificação descreve o desenho inicial. O que está implementado diverge nos pontos abaixo; quando houver conflito, **vale esta lista** (e o `CLAUDE.md`, que tem os detalhes técnicos).
+
+| Tema | Na especificação | O que está implementado |
+|---|---|---|
+| Utilizadores (3.1.1, tabela de decisões 2) | 2 logins, dados **partilhados**, sem papéis | **Multiutilizador isolado**: cada utilizador só vê as suas contas, movimentos, regras e categorias (`dono_id`, migração 0006). Qualquer pessoa é um utilizador normal; o isolamento é na aplicação (o administrador do servidor vê a BD). |
+| Titular e conta conjunta (secção 4, decisão 14) | `contas.titular_id`, NULL = conjunta | **Removidos.** Cada conta tem um dono; não há contas conjuntas nem filtro de titular. |
+| Categorias (3.7) | Seed global | **Por utilizador**: cada utilizador recebe a sua cópia do seed ao ser criado (inclui «Poupança/Investimento», do tipo transferência). Regras e histórico de categorização também são por utilizador. |
+| Transferências nos totais (3.9, secção 5) | Excluídas por omissão, com seletor «incluir transferências» | **Contam como movimentos normais** (sem seletor). A **taxa de poupança** usa receitas e despesas sem transferências, por isso o dinheiro enviado para poupança/investimento conta como poupado. |
+| Dashboard (3.9) | Receitas, despesas, poupança, categorias, evolução | Acrescenta **reserva (meses)**, **taxa de poupança acumulada e média de 6 meses**, **investido/poupado fora da conta**, escala do eixo Y com marcas redondas e o mês em curso fora das taxas e da poupança mensal. |
+| Bancos (3.3, decisão 1) | Só Bankinter no MVP; novos bancos = novo parser | **Qualquer banco** com extrato tabular (.xls, .xlsx, .csv) **com coluna de saldo**: o assistente «Adicionar conta» deteta o formato, verifica-o pela cadeia de saldos e pede confirmação ao utilizador (parser genérico por modelo guardado em `contas.config_importacao`). O Bankinter mantém o parser dedicado. PDF continua fora. |
+| Formato de importação (3.2) | CSV/XLSX | O `.xls` original do Bankinter é o formato principal; o `.xlsx` só é aceite no parser genérico. |
+| Instalação (secção 6) | `docker compose up` manual | `scripts/install.sh` interativo (instalação ao lado de outra instância, backup/restauro, tailscale opcional). |
 
 ---
 

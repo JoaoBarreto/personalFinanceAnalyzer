@@ -1,6 +1,8 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down test test-db test-frontend lint migrate create-user reset-data
+.PHONY: install up down test test-db test-frontend lint migrate create-user reset-data
+install:  # instalador interativo (ver scripts/install.sh --help)
+	scripts/install.sh
 up:
 	$(COMPOSE) up --build -d
 down:

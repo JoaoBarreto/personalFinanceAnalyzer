@@ -1,8 +1,10 @@
 # Adicionar um banco novo (ex.: ActiveBank) e contas de outros utilizadores
 
-Princípio: **nunca adivinhar o formato**. Cada banco tem um parser ESTRITO que só aceita o modelo exato do export original; qualquer desvio é recusado e nada é gravado. Extratos reais não entram no repositório nem são lidos por quem desenvolve: só se partilha a estrutura mascarada.
+Princípio: **nunca adivinhar o formato**. Cada conta importa com um modelo ESTRITO (o parser dedicado do Bankinter, ou o modelo detetado e **confirmado pelo utilizador** nos outros bancos); qualquer desvio é recusado e nada é gravado. Extratos reais não entram no repositório nem são lidos por quem desenvolve: se for preciso partilhar um formato, só se partilha a estrutura mascarada.
 
-## Ferramentas (em `scripts/`)
+## Ferramentas de linha de comandos (em `scripts/`)
+
+Uteis para investigar um formato fora da app (o assistente já faz isto por si, ver a secção seguinte).
 
 | Script | Para quê |
 |---|---|
@@ -25,12 +27,11 @@ O parser genérico é tão estrito como o do Bankinter: cabeçalho igual ao do m
 
 **Limites:** exige coluna de saldo por movimento (sem saldo não há cadeia para reconciliar: o serviço de importação recusa linhas sem saldo); uma só folha; sem PDF. Se a deteção falhar, a conta pode ser criada «por suportar» (`parser_id="pendente"`) e a app mostra a estrutura do extrato com valores mascarados, para pedir suporte.
 
-Código: `parsers/generic/` (`template.py` valida o modelo contra valores fixos, `parser.py`, `detector.py`, `reader.py`); `POST /api/banks/detect` e `/verify`.
+Código: `parsers/generic/` (`template.py` valida o modelo contra valores fixos, `parser.py`, `detector.py`, `reader.py`); endpoints `GET /api/banks`, `POST /api/banks/detect`, `/verify` e `/structure` (estrutura mascarada).
 
 ## Passos para um banco com parser dedicado (desenvolvimento)
 
 Só faz falta para extratos que o parser genérico não consegue ler (PDF, várias folhas, sem saldo, layouts invulgares).
-
 
 1. **Exportar** o extrato no formato original do banco (de preferência Excel/CSV, com saldo por linha) e **não o abrir nem guardar noutra aplicação**: isso muda formatos (ex.: `-889.50` lido como `-88950`).
 2. **Mascarar**: `mask_statement.py ficheiro` e colar a saída na conversa. Se os nomes das colunas aparecerem como `xxxx`, confirmar que a linha do cabeçalho não tem dados pessoais e repetir com `--mostrar-rotulos`. Rever a saída antes de a colar.
