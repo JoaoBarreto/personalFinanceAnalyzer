@@ -221,3 +221,5 @@ code { background: var(--page); border: 1px solid var(--border); border-radius: 
 .mask-out { background: var(--bg, #0d0d0d); border: 1px solid var(--border); border-radius: 8px; padding: .7rem; max-height: 24rem; overflow: auto; width: 100%; font-size: .8rem; white-space: pre; }
 a.primary { display: inline-block; text-decoration: none; background: var(--accent); color: #fff; padding: .5rem 1rem; border-radius: 8px; font-weight: 600; }
 a.primary:hover { filter: brightness(1.1); }
+.import-bar { position: sticky; top: 3.75rem; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem; box-shadow: 0 2px 10px rgba(0, 0, 0, .12); }
+.import-bar .actions { margin-left: auto; }

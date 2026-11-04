@@ -96,16 +96,25 @@ export default function Import() {
       )}
       {preview && (
         <>
-          <div className="card">
+          {/* Barra fixa no topo: o resumo e os botões ficam sempre à vista, mesmo com centenas de linhas */}
+          <div className="card import-bar">
             <div className="summary">
               <span className={`badge ${preview.reconciliado ? "good" : "bad"}`}>{preview.reconciliado ? "✓ Saldos reconciliam" : `✗ Não reconcilia (diferença ${eur(preview.diferenca)})`}</span>
               <span>{dataPt(preview.periodo_inicio)} – {dataPt(preview.periodo_fim)}</span>
               <span>Saldo inicial {eur(preview.saldo_inicial)} → final {eur(preview.saldo_final)}</span>
               <span>{preview.resumo.novo} novos · {preview.resumo.duplicado} duplicados · {preview.resumo.possivel_duplicado} possíveis duplicados</span>
             </div>
-            {preview.avisos.map((a) => <p key={a} className="warn-text">⚠ {a}</p>)}
-            {!preview.reconciliado && <p className="muted">Corrija o montante ou o saldo das linhas em causa (ícone ✎) e confirme de novo; o servidor volta a reconciliar tudo.</p>}
+            <div className="row actions">
+              <button className="primary" disabled={busy} onClick={confirmImport}>Confirmar importação</button>
+              <button disabled={busy} onClick={cancel}>Cancelar</button>
+            </div>
           </div>
+          {(preview.avisos.length > 0 || !preview.reconciliado) && (
+            <div className="card">
+              {preview.avisos.map((a) => <p key={a} className="warn-text">⚠ {a}</p>)}
+              {!preview.reconciliado && <p className="muted">Corrija o montante ou o saldo das linhas em causa (ícone ✎) e confirme de novo; o servidor volta a reconciliar tudo.</p>}
+            </div>
+          )}
           <div className="card flush">
             <table className="data">
               <thead><tr><th>Data</th><th>Descrição</th><th className="num">Montante</th><th className="num">Saldo</th><th>Estado</th><th>Excluir</th><th>Gravar mesmo assim</th><th /></tr></thead>
