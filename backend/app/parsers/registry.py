@@ -10,3 +10,12 @@ PARSERS: dict[str, StatementParser] = {
 
 def get_parser(parser_id: str) -> StatementParser | None:
     return PARSERS.get(parser_id)
+
+
+# Valor de parser_id de uma conta cujo banco ainda não tem parser: pode ser criada, mas não importa extratos.
+PENDING = "pendente"
+
+# Bancos com parser, para o assistente «Adicionar conta». Um banco novo = pasta em banks/ + entrada aqui e em PARSERS.
+BANKS = [
+    {"parser_id": "bankinter", "banco": "Bankinter", "formatos": [".xls", ".csv"]},
+]

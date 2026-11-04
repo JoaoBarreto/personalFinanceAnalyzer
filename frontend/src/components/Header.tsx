@@ -46,6 +46,7 @@ export default function Header() {
           <div className="navgroup">
             <span className="navcap">Trabalho</span>
             <NavLink to="/rever">Por categorizar{n > 0 && <span className="pill" aria-label={`${n} por categorizar`}>{n}</span>}</NavLink>
+            <NavLink to="/contas" className={() => ""}>Adicionar conta</NavLink>
             <NavLink to="/importar">Importar</NavLink>
           </div>
           <div className="navgroup dd" ref={cfgRef}>

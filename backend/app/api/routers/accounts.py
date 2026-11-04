@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
 from ...models import Conta
-from ...parsers.registry import PARSERS
+from ...parsers.registry import PARSERS, PENDING
 from ..scope import get_owned
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -34,8 +34,8 @@ def list_accounts(auth: Auth = Depends(require_auth), db: Session = Depends(get_
 
 @router.post("", response_model=AccountOut, status_code=201)
 def create_account(body: AccountIn, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    if body.parser_id not in PARSERS:
-        raise HTTPException(422, f"parser_id desconhecido; disponíveis: {sorted(PARSERS)}")
+    if body.parser_id != PENDING and body.parser_id not in PARSERS:
+        raise HTTPException(422, f"parser_id desconhecido; disponíveis: {sorted(PARSERS)} ou {PENDING!r}")
     conta = Conta(**body.model_dump(), dono_id=auth.utilizador.id)
     db.add(conta)
     try:
@@ -48,6 +48,7 @@ def create_account(body: AccountIn, auth: Auth = Depends(require_auth), db: Sess
 
 class AccountPatch(BaseModel):
     nome: str | None = Field(default=None, min_length=1)
+    parser_id: str | None = None  # p.ex. passar de «pendente» ao parser do banco quando passar a existir
     arquivada: bool | None = None
 
 
@@ -57,6 +58,10 @@ def patch_account(
 ):
     conta = get_owned(db, Conta, conta_id, auth.utilizador)
     data = body.model_dump(exclude_unset=True)
+    if "parser_id" in data and (
+        data["parser_id"] is None or (data["parser_id"] != PENDING and data["parser_id"] not in PARSERS)
+    ):
+        raise HTTPException(422, f"parser_id desconhecido; disponíveis: {sorted(PARSERS)} ou {PENDING!r}")
     for k, v in data.items():
         setattr(conta, k, v)
     try:

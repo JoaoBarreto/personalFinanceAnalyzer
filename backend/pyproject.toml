@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart",
     "unidecode",
     "xlrd>=2.0.1",
+    "openpyxl",
 ]
 
 [project.optional-dependencies]

@@ -94,6 +94,27 @@ export default function Dashboard() {
   const periodo = modo === "ano" ? `todo o ano de ${ym} (1 jan – 31 dez)` : `o mês de ${ym ? mesPt(ym) : "…"}`;
   const noPeriodo = modo === "ano" ? `em ${periodo}` : `n${periodo}`; // «em todo o ano…» / «no mês de…»
   const doPeriodo = modo === "ano" ? `de ${periodo}` : `d${periodo}`; // «de todo o ano…» / «do mês de…»
+  const nContas = cov.data?.length ?? null;
+  const nMovimentos = cov.data?.reduce((a, c) => a + c.n_movimentos, 0) ?? null;
+  if (nContas === 0 || nMovimentos === 0) {
+    // Primeiros passos: conta → extrato → categorizar
+    return (
+      <>
+        <div className="toolbar"><h1>Dashboard</h1></div>
+        <section className="card" aria-label="Primeiros passos">
+          <h2>Primeiros passos</h2>
+          <ol className="steps" aria-label="Passos">
+            <li className={nContas === 0 ? "on" : "done"}>1. Adicionar conta</li>
+            <li className={nContas === 0 ? "" : "on"}>2. Importar o extrato</li>
+            <li>3. Categorizar</li>
+          </ol>
+          {nContas === 0
+            ? <><p>Ainda não tem nenhuma conta. Escolha o banco, dê um nome à conta e carregue o extrato.</p><Link className="primary" to="/contas">Adicionar conta</Link></>
+            : <><p>Já tem conta. Falta importar o primeiro extrato: o preview mostra o que vai ser gravado antes de confirmar.</p><Link className="primary" to="/importar">Importar extrato</Link></>}
+        </section>
+      </>
+    );
+  }
   return (
     <>
       <div className="toolbar">

@@ -1,6 +1,17 @@
 from fastapi import FastAPI
 
-from .api.routers import accounts, analytics, auth, categories, coverage, imports, rules, transactions, users
+from .api.routers import (
+    accounts,
+    analytics,
+    auth,
+    banks,
+    categories,
+    coverage,
+    imports,
+    rules,
+    transactions,
+    users,
+)
 from .config import ENABLE_DOCS
 
 app = FastAPI(
@@ -11,6 +22,7 @@ app = FastAPI(
 )
 app.include_router(auth.router)
 app.include_router(accounts.router)
+app.include_router(banks.router)
 app.include_router(imports.router)
 app.include_router(categories.router)
 app.include_router(rules.router)

@@ -12,12 +12,16 @@ Princípio: **nunca adivinhar o formato**. Cada banco tem um parser ESTRITO que 
 
 Correm na máquina do utilizador com `backend/.venv/bin/python scripts/...` (para `.xlsx`: `backend/.venv/bin/pip install openpyxl`). PDF não é suportado: pedir ao banco o extrato em `.xls`/`.xlsx`/`.csv`.
 
-## Passos para um banco novo
+## Pela aplicação (qualquer utilizador)
+
+Em «Adicionar conta» (menu Trabalho, ou no dashboard vazio): 1) escolher o banco (a lista vem do registo de parsers; ou «Outro banco»), 2) dar nome à conta, 3) importar o extrato (banco suportado) ou, para um banco por suportar, carregar um extrato para ver só a **estrutura mascarada** (nada é gravado) e copiá-la para pedir o suporte. A conta de um banco por suportar fica com `parser_id = "pendente"` e recusa importações até ser mudada para um parser existente.
+
+## Passos para um banco novo (desenvolvimento)
 
 1. **Exportar** o extrato no formato original do banco (de preferência Excel/CSV, com saldo por linha) e **não o abrir nem guardar noutra aplicação**: isso muda formatos (ex.: `-889.50` lido como `-88950`).
 2. **Mascarar**: `mask_statement.py ficheiro` e colar a saída na conversa. Se os nomes das colunas aparecerem como `xxxx`, confirmar que a linha do cabeçalho não tem dados pessoais e repetir com `--mostrar-rotulos`. Rever a saída antes de a colar.
 3. **Definir o modelo estrito** (a partir da estrutura): colunas e ordem, onde fica o cabeçalho, formato de datas, separador decimal e de milhares, sinal (um só montante com sinal ou colunas débito/crédito), moeda, ordem das linhas, presença de saldo por linha e de preâmbulo/rodapé. Decisões de ambiguidade são do utilizador.
-4. **Implementar** em `backend/app/parsers/banks/<banco>/`: um parser com `can_parse` e `parse` (contrato em `parsers/base.py`), reutilizando a reconciliação por cadeia de saldos (`parsers/reconcile.py`). Dinheiro sempre em `Decimal` a partir do texto ou de cêntimos inteiros, nunca de float. Registar o `parser_id` em `parsers/registry.py`.
+4. **Implementar** em `backend/app/parsers/banks/<banco>/`: um parser com `can_parse` e `parse` (contrato em `parsers/base.py`), reutilizando a reconciliação por cadeia de saldos (`parsers/reconcile.py`). Dinheiro sempre em `Decimal` a partir do texto ou de cêntimos inteiros, nunca de float. Registar o `parser_id` em `parsers/registry.py` (`PARSERS` e a lista `BANKS`, que alimenta o assistente).
 5. **Testes sintéticos**: um gerador de ficheiros no `conftest.py` (como `build_csv`/`build_xls`) com valores escritos à mão e variantes inválidas de propósito (data errada, casas decimais a mais, coluna renomeada, outra folha). Os testes recusam desvios e aceitam o modelo exato. Nunca usar o ficheiro real nos testes versionados.
 6. **Validar no ficheiro real**: o utilizador corre `check_statement.py <banco> ficheiro` e cola o resultado. Se for recusado, ajusta-se pela mensagem agregada, sem relaxar a regra.
 7. **Conta**: criar o utilizador (`make create-user`) se ainda não existir, depois a conta em «Contas» com o banco certo. Importar, rever o preview (avisos de continuidade e duplicados) e confirmar.

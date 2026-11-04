@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, errorMessage, type Account } from "../api";
 import { CoverageSummary } from "../components/Coverage";
 import { useAsync } from "../hooks";
@@ -20,7 +20,8 @@ const ESTADO: Record<Line["estado"], string> = { novo: "novo", duplicado: "dupli
 export default function Import() {
   const accounts = useAsync(() => api.get<Account[]>("/api/accounts"), []);
   const history = useAsync(() => api.get<ImportRow[]>("/api/imports"), []);
-  const [contaId, setContaId] = useState<number | null>(null);
+  const [sp] = useSearchParams();
+  const [contaId, setContaId] = useState<number | null>(sp.get("conta") ? Number(sp.get("conta")) : null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [include, setInclude] = useState<Set<number>>(new Set());
@@ -35,10 +36,6 @@ export default function Import() {
     setBusy(true); setErr(null);
     try { await fn(); } catch (e) { setErr(errorMessage(e)); } finally { setBusy(false); }
   };
-  const createAccount = () => wrap(async () => {
-    await api.post("/api/accounts", { nome: "Bankinter Ordenado", banco: "Bankinter", parser_id: "bankinter" });
-    accounts.reload();
-  });
   const upload = (file: File) => wrap(async () => {
     if (!conta) throw new Error("Crie primeiro uma conta.");
     const fd = new FormData();
@@ -72,7 +69,7 @@ export default function Import() {
       <div className="toolbar"><h1>Importar extrato</h1></div>
       {err && <p className="error" role="alert">{err}</p>}
       {accounts.data?.length === 0 && (
-        <div className="card"><p>Ainda não tem nenhuma conta.</p><button className="primary" onClick={createAccount}>Criar conta «Bankinter Ordenado»</button></div>
+        <div className="card"><p>Ainda não tem nenhuma conta.</p><Link className="primary" to="/contas">Adicionar conta</Link></div>
       )}
       {!preview && accounts.data && accounts.data.length > 0 && (
         <div className="card drop" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>

@@ -2,7 +2,7 @@
 export const APP = {
   nome: "Finanças Pessoais",
   descricao: "Análise de extratos bancários, local e privada",
-  versao: "0.1.0",
+  versao: "0.2.0",
   autor: "João Barreto",
   ano: 2026,
   repo: "https://github.com/JoaoBarreto/personalFinanceAnalyzer",

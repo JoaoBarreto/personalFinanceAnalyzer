@@ -212,3 +212,11 @@ code { background: var(--page); border: 1px solid var(--border); border-radius: 
   .login-shell { grid-template-columns: 1fr; } .login-brand { padding: 1.5rem 1.5rem 1.75rem; } .login-logo { margin-bottom: 1.25rem; }
   .login-brand h1 { font-size: 1.5rem; } .login-brand ul, .login-copy { display: none; } .login-brand .login-tagline { margin-bottom: 0; }
 }
+.wizard h2 { margin: 0 0 .5rem; }
+.steps { display: flex; gap: .4rem; list-style: none; padding: 0; margin: 0 0 .8rem; flex-wrap: wrap; }
+.steps li { padding: .2rem .7rem; border: 1px solid var(--border); border-radius: 999px; color: var(--ink-2); font-size: .85rem; }
+.steps li.on { border-color: var(--accent); color: var(--ink); font-weight: 600; } .steps li.done { color: var(--good); }
+.stack { display: flex; flex-direction: column; gap: .7rem; align-items: flex-start; } .stack label { display: flex; flex-direction: column; gap: .25rem; }
+.stack label.check { flex-direction: row; align-items: flex-start; gap: .4rem; }
+.mask-out { background: var(--bg, #0d0d0d); border: 1px solid var(--border); border-radius: 8px; padding: .7rem; max-height: 24rem; overflow: auto; width: 100%; font-size: .8rem; white-space: pre; }
+a.primary { display: inline-block; text-decoration: none; }
