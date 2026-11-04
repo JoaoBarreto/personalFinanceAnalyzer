@@ -37,9 +37,10 @@ def gaps(db: Session, conta_id: int) -> list[dict]:
 
 
 @router.get("")
-def coverage(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+def coverage(auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     out = []
-    for c in db.scalars(select(Conta).where(Conta.arquivada.is_(False)).order_by(Conta.id)):
+    contas = select(Conta).where(Conta.arquivada.is_(False), Conta.dono_id == auth.utilizador.id)
+    for c in db.scalars(contas.order_by(Conta.id)):
         first, last, n = db.execute(
             select(
                 func.min(Movimento.data_movimento), func.max(Movimento.data_movimento), func.count()

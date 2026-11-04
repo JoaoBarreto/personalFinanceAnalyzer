@@ -1,6 +1,6 @@
 """Saldo da conta numa data, a partir da coluna de saldo dos movimentos (cadeia de saldos).
 
-Calcula-se por conta e soma-se sobre o âmbito, porque o filtro de titular pode abranger várias contas.
+Calcula-se por conta e soma-se sobre o âmbito, porque o âmbito pode abranger várias contas do utilizador.
 """
 
 from datetime import date

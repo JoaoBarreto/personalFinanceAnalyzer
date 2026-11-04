@@ -157,8 +157,26 @@ def _view(imp: Importacao, lines: list[dict[str, Any]] | None, avisos: list[str]
     }
 
 
-def list_imports(db: Session) -> list[dict[str, Any]]:
-    q = select(Importacao).where(Importacao.estado != "erro").order_by(Importacao.id.desc())
+def _own(db: Session, imp_id: int, user_id: int, *, lock: bool = False) -> Importacao:
+    """Importação de uma conta do utilizador; de outro utilizador dá o mesmo 404 que uma inexistente."""
+    q = (
+        select(Importacao)
+        .join(Conta, Conta.id == Importacao.conta_id)
+        .where(Importacao.id == imp_id, Conta.dono_id == user_id)
+    )
+    imp = db.scalar(q.with_for_update(of=Importacao) if lock else q)
+    if imp is None:
+        raise ServiceError(404, "Importação não encontrada")
+    return imp
+
+
+def list_imports(db: Session, user_id: int) -> list[dict[str, Any]]:
+    q = (
+        select(Importacao)
+        .join(Conta, Conta.id == Importacao.conta_id)
+        .where(Importacao.estado != "erro", Conta.dono_id == user_id)
+        .order_by(Importacao.id.desc())
+    )
     return [
         {
             "id": i.id,
@@ -176,17 +194,15 @@ def list_imports(db: Session) -> list[dict[str, Any]]:
     ]
 
 
-def get_view(db: Session, imp_id: int) -> dict[str, Any]:
-    imp = db.get(Importacao, imp_id)
-    if imp is None:
-        raise ServiceError(404, "Importação não encontrada")
+def get_view(db: Session, imp_id: int, user_id: int) -> dict[str, Any]:
+    imp = _own(db, imp_id, user_id)
     lines = imp.staging["linhas"] if imp.staging else None
     return _view(imp, lines, imp.staging["avisos"] if imp.staging else [])
 
 
 def preview(db: Session, conta_id: int, filename: str, content: bytes, user_id: int) -> dict[str, Any]:
     conta = db.get(Conta, conta_id)
-    if conta is None or conta.arquivada:
+    if conta is None or conta.arquivada or conta.dono_id != user_id:
         raise ServiceError(404, "Conta não encontrada")
     # limpeza oportunista de pré-visualizações expiradas (guardam descrições e montantes em staging)
     db.execute(delete(Importacao).where(Importacao.estado == "preview", Importacao.expira_em <= _now()))
@@ -313,9 +329,7 @@ def preview(db: Session, conta_id: int, filename: str, content: bytes, user_id: 
 
 
 def confirm(db: Session, imp_id: int, body: ConfirmIn, user_id: int) -> dict[str, Any]:
-    imp = db.scalar(select(Importacao).where(Importacao.id == imp_id).with_for_update())
-    if imp is None:
-        raise ServiceError(404, "Importação não encontrada")
+    imp = _own(db, imp_id, user_id, lock=True)
     if imp.estado != "preview":
         raise ServiceError(409, f"A importação está no estado {imp.estado!r}.")
     if imp.expira_em and imp.expira_em <= _now():
@@ -393,7 +407,7 @@ def confirm(db: Session, imp_id: int, body: ConfirmIn, user_id: int) -> dict[str
     # Categorização automática: regras, depois histórico (PRD 3.5); manuais nunca são tocadas
     db.flush()
     restauradas = apply_saved(db, imp.conta_id, novos, user_id)  # escolhas manuais guardadas (reset/reversão)
-    categorize(db, novos, only_uncategorized=True)
+    categorize(db, novos, user_id, only_uncategorized=True)
     imp.estado, imp.confirmada_em = "confirmada", _now()
     imp.n_movimentos, imp.n_duplicados_ignorados = len(to_insert), len(ignorados)
     imp.n_excluidos_utilizador = len(excluded)
@@ -409,9 +423,7 @@ def confirm(db: Session, imp_id: int, body: ConfirmIn, user_id: int) -> dict[str
 
 
 def revert_or_cancel(db: Session, imp_id: int, user_id: int) -> None:
-    imp = db.scalar(select(Importacao).where(Importacao.id == imp_id).with_for_update())
-    if imp is None:
-        raise ServiceError(404, "Importação não encontrada")
+    imp = _own(db, imp_id, user_id, lock=True)
     if imp.estado in ("preview", "erro"):  # cancelar
         db.delete(imp)
         db.commit()

@@ -1,22 +1,48 @@
-"""Âmbito de contas (conta e/ou titular) partilhado pelos routers de movimentos e analytics (PRD 3.1/3.9)."""
+"""Âmbito por dono: cada utilizador só vê e altera o que é seu (contas, regras, categorias e, por herança da conta,
+movimentos, importações e categorizações guardadas).
+
+Todos os routers usam estes ajudantes; `tests/test_isolation.py` exige 404/vazio para dados de outro utilizador.
+"""
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from ..models import Conta, Movimento
+from ..models import Categoria, Conta, Importacao, Movimento, Regra, Utilizador
+
+_MSG = {
+    Conta: "Conta não encontrada",
+    Regra: "Regra não encontrada",
+    Categoria: "Categoria não encontrada",
+    Movimento: "Movimento não encontrado",
+    Importacao: "Importação não encontrada",
+}
 
 
-def scope_conds(conta_id: int | None, titular: str | None) -> list:
-    """Condições sobre Movimento. `titular`: id de utilizador, ou "conjunta" (contas sem titular)."""
-    conds = []
+def owned_account_ids(user: Utilizador):
+    """Subconsulta com os ids das contas do utilizador."""
+    return select(Conta.id).where(Conta.dono_id == user.id)
+
+
+def scope_conds(user: Utilizador, conta_id: int | None = None) -> list:
+    """Condições sobre Movimento: só contas do utilizador (e, opcionalmente, uma conta em particular)."""
+    conds = [Movimento.conta_id.in_(owned_account_ids(user))]
     if conta_id is not None:
         conds.append(Movimento.conta_id == conta_id)
-    if titular:
-        if titular == "conjunta":
-            sub = select(Conta.id).where(Conta.titular_id.is_(None))
-        elif titular.isdigit():
-            sub = select(Conta.id).where(Conta.titular_id == int(titular))
-        else:
-            raise HTTPException(422, "titular deve ser um id de utilizador ou 'conjunta'")
-        conds.append(Movimento.conta_id.in_(sub))
     return conds
+
+
+def get_owned(
+    db: Session, model, obj_id: int, user: Utilizador, *, status: int = 404, msg: str | None = None
+):
+    """Obtém um objeto do utilizador; de outro utilizador ou inexistente dá o MESMO erro (não revela que existe)."""
+    obj = db.get(model, obj_id)
+    ok = False
+    if obj is not None:
+        if model in (Conta, Regra, Categoria):
+            ok = obj.dono_id == user.id
+        else:  # Movimento / Importacao: o dono vem da conta
+            ok = db.scalar(select(Conta.dono_id).where(Conta.id == obj.conta_id)) == user.id
+    if not ok:
+        raise HTTPException(status, msg or _MSG[model])
+    return obj

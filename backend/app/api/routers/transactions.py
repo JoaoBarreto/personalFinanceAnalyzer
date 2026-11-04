@@ -3,14 +3,14 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, ValidationError, model_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
 from ...models import Categoria, Movimento, Regra
 from ...services import categorizer
 from ...services.normalizer import normalize_pattern, suggest_keyword
-from ..scope import scope_conds
+from ..scope import get_owned, owned_account_ids, scope_conds
 from .rules import RuleIn, draft, rule_out
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
@@ -42,10 +42,9 @@ def _like(text: str) -> str:
 
 @router.get("")
 def list_transactions(
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
     conta_id: int | None = None,
-    titular: str | None = None,
     categoria_id: int | None = None,
     descricao_normalizada: str | None = None,
     sem_categoria: bool = False,
@@ -59,7 +58,7 @@ def list_transactions(
     page_size: int = Query(50, ge=1, le=200),
 ):
     stmt = select(Movimento, Categoria).outerjoin(Categoria, Categoria.id == Movimento.categoria_id)
-    stmt = stmt.where(*scope_conds(conta_id, titular))
+    stmt = stmt.where(*scope_conds(auth.utilizador, conta_id))
     if descricao_normalizada is not None:
         stmt = stmt.where(Movimento.descricao_normalizada == descricao_normalizada)
     if sem_categoria:
@@ -96,10 +95,10 @@ def list_transactions(
 @router.get("/uncategorized")
 def uncategorized(
     group_by: str | None = Query(None, pattern="^description$"),
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    base = Movimento.categoria_id.is_(None)
+    base = and_(Movimento.categoria_id.is_(None), *scope_conds(auth.utilizador))
     total = db.scalar(select(func.count()).select_from(Movimento).where(base))
     if group_by is None:
         rows = db.execute(
@@ -145,12 +144,10 @@ class TransactionPatch(BaseModel):
 def patch_transaction(
     tx_id: int, body: TransactionPatch, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)
 ):
-    m = db.get(Movimento, tx_id)
-    if m is None:
-        raise HTTPException(404, "Movimento não encontrado")
+    m = get_owned(db, Movimento, tx_id, auth.utilizador)
     fields = body.model_fields_set
     if "categoria_id" in fields:
-        _set_category(db, [m], body.categoria_id, auth.utilizador.id)
+        _set_category(db, [m], body.categoria_id, auth.utilizador)
     if "notas" in fields:
         m.notas = body.notas
     m.atualizado_por = auth.utilizador.id
@@ -158,10 +155,11 @@ def patch_transaction(
     return _out(m, db.get(Categoria, m.categoria_id) if m.categoria_id else None)
 
 
-def _set_category(db: Session, movs: list[Movimento], categoria_id: int | None, user_id: int) -> None:
+def _set_category(db: Session, movs: list[Movimento], categoria_id: int | None, user) -> None:
+    user_id = user.id
     if categoria_id is not None:
-        cat = db.get(Categoria, categoria_id)
-        if cat is None or not cat.ativa:
+        cat = get_owned(db, Categoria, categoria_id, user, status=422, msg="Categoria inexistente ou inativa")
+        if not cat.ativa:
             raise HTTPException(422, "Categoria inexistente ou inativa")
     for m in movs:
         # categorização manual: nunca é sobrescrita por regras (categoria_origem = 'manual')
@@ -200,7 +198,8 @@ def _estado(m: Movimento) -> tuple:
 
 @router.post("/bulk-categorize")
 def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    stmt = select(Movimento)
+    user = auth.utilizador
+    stmt = select(Movimento).where(*scope_conds(user))  # só movimentos do próprio utilizador
     stmt = (
         stmt.where(Movimento.id.in_(body.ids))
         if body.ids is not None
@@ -215,7 +214,9 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         [
             m
             for m in db.scalars(
-                select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))
+                select(Movimento).where(
+                    Movimento.categoria_origem.is_distinct_from("manual"), *scope_conds(user)
+                )
             )
             if m.id not in excl
         ]
@@ -223,7 +224,7 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         else []
     )
     antes = {m.id: _estado(m) for m in [*movs, *candidatos]}  # para a lista de alterações e para o «Desfazer»
-    _set_category(db, movs, body.categoria_id, auth.utilizador.id)
+    _set_category(db, movs, body.categoria_id, user)
     out: dict = {"categorizados": len(movs), "regra": None, "impacto": None, "aplicados": 0}
     if body.criar_regra:
         lr = body.criar_regra
@@ -232,12 +233,15 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         except ValidationError as e:
             raise HTTPException(422, "; ".join(x["msg"] for x in e.errors())) from e
         db.flush()
-        out["impacto"] = categorizer.impact(db, draft(rin))  # inclui alerta de conflitos (outra categoria)
+        out["impacto"] = categorizer.impact(
+            db, draft(rin), user.id
+        )  # inclui alerta de conflitos (outra categoria)
         r = Regra(
             padrao=normalize_pattern(lr.padrao),
             tipo_match=lr.tipo_match,
             categoria_id=body.categoria_id,
             origem="aprendida",
+            dono_id=user.id,
             criado_por=auth.utilizador.id,
             atualizado_por=auth.utilizador.id,
         )
@@ -245,11 +249,11 @@ def bulk_categorize(body: BulkCategorize, auth: Auth = Depends(require_auth), db
         db.flush()
         out["regra"] = rule_out(r)
         if retro:
-            res = categorizer.categorize(db, candidatos, only_uncategorized=False)
+            res = categorizer.categorize(db, candidatos, user.id, only_uncategorized=False)
             out["aplicados"] = sum(res.applied.values())  # outras linhas categorizadas pela nova regra
     # tudo o que mudou, com o estado anterior (permite corrigir linha a linha e «Desfazer»)
     por_id = {m.id: m for m in [*movs, *candidatos]}
-    nomes = {c.id: c.nome for c in db.scalars(select(Categoria))}
+    nomes = {c.id: c.nome for c in db.scalars(select(Categoria).where(Categoria.dono_id == user.id))}
     out["alteradas"] = [
         {
             "id": m.id,
@@ -289,19 +293,26 @@ class Restore(BaseModel):
 @router.post("/restore")
 def restore(body: Restore, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     """Desfaz uma categorização em lote: repõe o estado anterior e apaga a regra criada nessa ação."""
+    user = auth.utilizador
+    minhas = set(db.scalars(owned_account_ids(user)))
     n = 0
     for it in body.itens:
         m = db.get(Movimento, it.id)
-        if m is None:
-            continue
-        if it.categoria_id is not None and db.get(Categoria, it.categoria_id) is None:
-            raise HTTPException(422, "Categoria anterior inexistente")
+        if m is None or m.conta_id not in minhas:
+            continue  # inexistente ou de outro utilizador: ignora, sem revelar
+        if it.categoria_id is not None:
+            get_owned(db, Categoria, it.categoria_id, user, status=422, msg="Categoria anterior inexistente")
+        regra = db.get(Regra, it.regra_id) if it.regra_id else None
         m.categoria_id, m.categoria_origem = it.categoria_id, it.categoria_origem
-        m.regra_id = it.regra_id if it.regra_id and db.get(Regra, it.regra_id) else None
+        m.regra_id = it.regra_id if regra is not None and regra.dono_id == user.id else None
         m.atualizado_por = auth.utilizador.id
         n += 1
     apagada = False
-    if body.apagar_regra_id is not None and (r := db.get(Regra, body.apagar_regra_id)) is not None:
+    if (
+        body.apagar_regra_id is not None
+        and (r := db.get(Regra, body.apagar_regra_id)) is not None
+        and r.dono_id == user.id
+    ):
         db.delete(r)
         apagada = True
     db.commit()

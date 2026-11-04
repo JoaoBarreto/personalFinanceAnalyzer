@@ -13,7 +13,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..models import Categoria, Movimento, Regra
+from ..models import Categoria, Conta, Movimento, Regra
 
 SPECIFICITY = {"igual": 3, "comeca_por": 2, "contem": 1, "regex": 0}
 
@@ -82,11 +82,19 @@ def best_rule(rules: list[RuleData], desc_norm: str, montante: Decimal, conta_id
     return min(hits, key=_rank) if hits else None
 
 
-def load_rules(db: Session) -> list[RuleData]:
-    return [RuleData.of(r) for r in db.scalars(select(Regra).where(Regra.ativa.is_(True)))]
+def load_rules(db: Session, dono_id: int) -> list[RuleData]:
+    return [
+        RuleData.of(r)
+        for r in db.scalars(select(Regra).where(Regra.ativa.is_(True), Regra.dono_id == dono_id))
+    ]
 
 
-def history_map(db: Session) -> dict[str, int]:
+def owned_movements(dono_id: int):
+    """Condição: movimento numa conta do utilizador."""
+    return Movimento.conta_id.in_(select(Conta.id).where(Conta.dono_id == dono_id))
+
+
+def history_map(db: Session, dono_id: int) -> dict[str, int]:
     """descricao_normalizada -> categoria mais frequente (desempate: a mais recente) escolhida À MÃO.
 
     Só contam as escolhas manuais: as categorias vindas de regras já estão nas regras, e se contassem aqui, uma
@@ -94,7 +102,7 @@ def history_map(db: Session) -> dict[str, int]:
     """
     q = (
         select(Movimento.descricao_normalizada, Movimento.categoria_id, func.count(), func.max(Movimento.id))
-        .where(Movimento.categoria_origem == "manual")
+        .where(Movimento.categoria_origem == "manual", owned_movements(dono_id))
         .group_by(Movimento.descricao_normalizada, Movimento.categoria_id)
     )
     best: dict[str, tuple[int, int, int]] = {}
@@ -113,7 +121,12 @@ class CategorizeResult:
 
 
 def categorize(
-    db: Session, movs: list[Movimento], *, only_uncategorized: bool, rules: list[RuleData] | None = None
+    db: Session,
+    movs: list[Movimento],
+    dono_id: int,
+    *,
+    only_uncategorized: bool,
+    rules: list[RuleData] | None = None,
 ) -> CategorizeResult:
     """Aplica regras e depois histórico (escolhas manuais). Ignora sempre `manual`.
 
@@ -121,8 +134,8 @@ def categorize(
     editada ou desativada, e que já não a apanha, é libertada (volta a «por categorizar»). As linhas cuja regra foi
     APAGADA (regra_id nulo) mantêm a categoria.
     """
-    rules = load_rules(db) if rules is None else rules
-    hist = history_map(db)
+    rules = load_rules(db, dono_id) if rules is None else rules
+    hist = history_map(db, dono_id)
     applied: Counter[int] = Counter()
     released = 0
     for m in movs:
@@ -147,17 +160,23 @@ def categorize(
     return CategorizeResult(dict(applied), released)
 
 
-def impact(db: Session, rule: RuleData, linhas: int = 0) -> dict:
+def impact(db: Session, rule: RuleData, dono_id: int, linhas: int = 0) -> dict:
     """Movimentos não-manuais que a regra passaria a categorizar (manuais nunca entram na contagem).
 
     Com `linhas > 0` devolve também as primeiras `linhas` (para o utilizador as ver e validar antes de aplicar).
     """
-    others = [r for r in load_rules(db) if r.id != rule.id]
+    others = [r for r in load_rules(db, dono_id) if r.id != rule.id]
     candidates = others + [rule]
     afetados = conflitos = 0
     out: list[dict] = []
-    nomes = {c.id: c.nome for c in db.scalars(select(Categoria))} if linhas else {}
-    q = select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))
+    nomes = (
+        {c.id: c.nome for c in db.scalars(select(Categoria).where(Categoria.dono_id == dono_id))}
+        if linhas
+        else {}
+    )
+    q = select(Movimento).where(
+        Movimento.categoria_origem.is_distinct_from("manual"), owned_movements(dono_id)
+    )
     q = q.order_by(Movimento.data_movimento, Movimento.ordem_no_dia, Movimento.id)
     for m in db.scalars(q):
         w = best_rule(candidates, m.descricao_normalizada, m.montante, m.conta_id)

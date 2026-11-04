@@ -12,6 +12,7 @@ from ...models import Categoria, Conta, Movimento, Regra
 from ...services import categorizer
 from ...services.categorizer import RuleData
 from ...services.normalizer import normalize_pattern
+from ..scope import get_owned
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
@@ -81,11 +82,11 @@ def _store_pattern(padrao: str, tipo: str) -> str:
     return padrao if tipo == "regex" else normalize_pattern(padrao)
 
 
-def _check_refs(db: Session, categoria_id: int | None, conta_id: int | None):
-    if categoria_id is not None and db.get(Categoria, categoria_id) is None:
-        raise HTTPException(422, "Categoria inexistente")
-    if conta_id is not None and db.get(Conta, conta_id) is None:
-        raise HTTPException(422, "Conta inexistente")
+def _check_refs(db: Session, user, categoria_id: int | None, conta_id: int | None):
+    if categoria_id is not None:
+        get_owned(db, Categoria, categoria_id, user, status=422, msg="Categoria inexistente")
+    if conta_id is not None:
+        get_owned(db, Conta, conta_id, user, status=422, msg="Conta inexistente")
 
 
 def draft(body: RuleIn, rule_id: int | None = None) -> RuleData:
@@ -114,11 +115,15 @@ def search_rules(
     origem: str | None = Query(None, pattern="^(manual|aprendida)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=200),
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
     """Regras paginadas, com pesquisa (palavra-chave ou nome da categoria) e filtros."""
-    stmt = select(Regra, Categoria.nome).join(Categoria, Categoria.id == Regra.categoria_id)
+    stmt = (
+        select(Regra, Categoria.nome)
+        .join(Categoria, Categoria.id == Regra.categoria_id)
+        .where(Regra.dono_id == auth.utilizador.id)
+    )
     if q and q.strip():
         stmt = stmt.where(
             or_(
@@ -147,16 +152,18 @@ def search_rules(
 
 
 @router.get("")
-def list_rules(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    return [rule_out(r) for r in db.scalars(select(Regra).order_by(Regra.prioridade.desc(), Regra.id))]
+def list_rules(auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    q = select(Regra).where(Regra.dono_id == auth.utilizador.id).order_by(Regra.prioridade.desc(), Regra.id)
+    return [rule_out(r) for r in db.scalars(q)]
 
 
 @router.post("", status_code=201)
 def create_rule(body: RuleIn, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    _check_refs(db, body.categoria_id, body.conta_id)
+    _check_refs(db, auth.utilizador, body.categoria_id, body.conta_id)
     r = Regra(
         **{**body.model_dump(), "padrao": _store_pattern(body.padrao, body.tipo_match)},
         origem="manual",
+        dono_id=auth.utilizador.id,
         criado_por=auth.utilizador.id,
         atualizado_por=auth.utilizador.id,
     )
@@ -169,16 +176,14 @@ def create_rule(body: RuleIn, auth: Auth = Depends(require_auth), db: Session = 
 def patch_rule(
     rule_id: int, body: RulePatch, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)
 ):
-    r = db.get(Regra, rule_id)
-    if r is None:
-        raise HTTPException(404, "Regra não encontrada")
+    r = get_owned(db, Regra, rule_id, auth.utilizador)
     data = body.model_dump(exclude_unset=True)
     merged = {**rule_out(r), **data}
     try:  # reutiliza as validações do corpo completo
         full = RuleIn(**{k: merged[k] for k in RuleIn.model_fields})
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    _check_refs(db, data.get("categoria_id"), data.get("conta_id"))
+    _check_refs(db, auth.utilizador, data.get("categoria_id"), data.get("conta_id"))
     for k in RuleIn.model_fields:
         setattr(r, k, getattr(full, k))
     r.padrao = _store_pattern(full.padrao, full.tipo_match)
@@ -188,10 +193,8 @@ def patch_rule(
 
 
 @router.delete("/{rule_id}", status_code=204)
-def delete_rule(rule_id: int, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    r = db.get(Regra, rule_id)
-    if r is None:
-        raise HTTPException(404, "Regra não encontrada")
+def delete_rule(rule_id: int, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    r = get_owned(db, Regra, rule_id, auth.utilizador)
     db.delete(r)  # movimentos.regra_id passa a NULL (ON DELETE SET NULL); a categoria mantém-se
     db.commit()
 
@@ -200,26 +203,29 @@ def delete_rule(rule_id: int, _: Auth = Depends(require_auth), db: Session = Dep
 def preview_draft(
     body: RuleIn,
     linhas: int = Query(0, ge=0, le=500),
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    _check_refs(db, body.categoria_id, body.conta_id)
-    return categorizer.impact(db, draft(body), linhas)
+    _check_refs(db, auth.utilizador, body.categoria_id, body.conta_id)
+    return categorizer.impact(db, draft(body), auth.utilizador.id, linhas)
 
 
 @router.post("/{rule_id}/preview-impact")
-def preview_impact(rule_id: int, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    r = db.get(Regra, rule_id)
-    if r is None:
-        raise HTTPException(404, "Regra não encontrada")
-    return categorizer.impact(db, RuleData.of(r))
+def preview_impact(rule_id: int, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    r = get_owned(db, Regra, rule_id, auth.utilizador)
+    return categorizer.impact(db, RuleData.of(r), auth.utilizador.id)
 
 
 @router.post("/apply")
-def apply_rules(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    """Aplicação retroativa: reavalia regras e histórico em todos os movimentos não-manuais."""
-    movs = db.scalars(select(Movimento).where(Movimento.categoria_origem.is_distinct_from("manual"))).all()
-    res = categorizer.categorize(db, list(movs), only_uncategorized=False)
+def apply_rules(auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    """Aplicação retroativa: reavalia regras e histórico em todos os movimentos não-manuais do utilizador."""
+    uid = auth.utilizador.id
+    movs = db.scalars(
+        select(Movimento).where(
+            Movimento.categoria_origem.is_distinct_from("manual"), categorizer.owned_movements(uid)
+        )
+    ).all()
+    res = categorizer.categorize(db, list(movs), uid, only_uncategorized=False)
     db.commit()
     return {
         "movimentos_alterados": sum(res.applied.values()),

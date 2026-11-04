@@ -95,8 +95,12 @@ def test_sem_dados(api):
     assert get(api, "by-category")["itens"] == []
 
 
-def test_categorias_existem_para_o_seed(db):
-    assert db.scalar(select(Categoria.id).where(Categoria.nome == "Supermercado")) is not None
+def test_cada_utilizador_recebe_as_suas_categorias_do_seed(api, db):
+    nomes = set(db.scalars(select(Categoria.nome)))
+    assert {"Supermercado", "Poupança/Investimento", "Transferências entre contas"} <= nomes
+    assert (
+        db.scalar(select(Categoria.tipo).where(Categoria.nome == "Poupança/Investimento")) == "transferencia"
+    )
 
 
 def test_media_ignora_meses_anteriores_ao_primeiro_movimento(api, db):

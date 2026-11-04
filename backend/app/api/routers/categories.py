@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ...deps import Auth, get_db, require_auth
 from ...models import Categoria, CategorizacaoGuardada, Movimento, Regra
+from ..scope import get_owned, scope_conds
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
@@ -41,29 +42,45 @@ class CategoryOut(BaseModel):
 
 
 @router.get("", response_model=list[CategoryOut])
-def list_categories(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+def list_categories(auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    user = auth.utilizador
     usados = dict(
-        db.execute(select(Movimento.categoria_id, func.count()).group_by(Movimento.categoria_id)).all()
+        db.execute(
+            select(Movimento.categoria_id, func.count())
+            .where(*scope_conds(user))
+            .group_by(Movimento.categoria_id)
+        ).all()
     )
-    cats = db.scalars(select(Categoria).order_by(Categoria.parent_id.nulls_first(), Categoria.nome)).all()
+    cats = db.scalars(
+        select(Categoria)
+        .where(Categoria.dono_id == user.id)
+        .order_by(Categoria.parent_id.nulls_first(), Categoria.nome)
+    ).all()
     return [
         CategoryOut.model_validate(c).model_copy(update={"n_movimentos": usados.get(c.id, 0)}) for c in cats
     ]
 
 
 @router.post("", response_model=CategoryOut, status_code=201)
-def create_category(body: CategoryIn, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+def create_category(body: CategoryIn, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     tipo = body.tipo
     if body.parent_id is not None:
-        parent = db.get(Categoria, body.parent_id)
-        if parent is None:
-            raise HTTPException(422, "Categoria-pai inexistente")
+        parent = get_owned(
+            db, Categoria, body.parent_id, auth.utilizador, status=422, msg="Categoria-pai inexistente"
+        )
         if parent.parent_id is not None:
             raise HTTPException(422, "Máximo de 2 níveis de categorias")
         tipo = parent.tipo  # o filho herda o tipo do pai
     if tipo is None:
         raise HTTPException(422, "tipo é obrigatório para categorias de topo")
-    cat = Categoria(nome=body.nome, parent_id=body.parent_id, tipo=tipo, cor=body.cor, icone=body.icone)
+    cat = Categoria(
+        nome=body.nome,
+        parent_id=body.parent_id,
+        tipo=tipo,
+        cor=body.cor,
+        icone=body.icone,
+        dono_id=auth.utilizador.id,
+    )
     db.add(cat)
     try:
         db.commit()
@@ -75,11 +92,9 @@ def create_category(body: CategoryIn, _: Auth = Depends(require_auth), db: Sessi
 
 @router.patch("/{cat_id}", response_model=CategoryOut)
 def patch_category(
-    cat_id: int, body: CategoryPatch, _: Auth = Depends(require_auth), db: Session = Depends(get_db)
+    cat_id: int, body: CategoryPatch, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)
 ):
-    cat = db.get(Categoria, cat_id)
-    if cat is None:
-        raise HTTPException(404, "Categoria não encontrada")
+    cat = get_owned(db, Categoria, cat_id, auth.utilizador)
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(cat, k, v)
     try:
@@ -91,11 +106,9 @@ def patch_category(
 
 
 @router.delete("/{cat_id}", status_code=204)
-def delete_category(cat_id: int, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+def delete_category(cat_id: int, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     """Só se não estiver em uso (filhas, movimentos ou regras); caso contrário, desative-a."""
-    cat = db.get(Categoria, cat_id)
-    if cat is None:
-        raise HTTPException(404, "Categoria não encontrada")
+    cat = get_owned(db, Categoria, cat_id, auth.utilizador)
     if db.scalar(select(func.count()).select_from(Categoria).where(Categoria.parent_id == cat_id)):
         raise HTTPException(409, "Tem subcategorias: apague-as primeiro (ou desative a categoria).")
     if db.scalar(select(func.count()).select_from(Movimento).where(Movimento.categoria_id == cat_id)):

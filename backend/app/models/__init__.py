@@ -55,15 +55,16 @@ class Sessao(Base):
 class Conta(Base):
     __tablename__ = "contas"
     id: Mapped[int] = _id()
-    nome: Mapped[str] = mapped_column(Text, unique=True)
+    nome: Mapped[str] = mapped_column(Text)
     banco: Mapped[str] = mapped_column(Text)
     iban_mascarado: Mapped[str | None] = mapped_column(Text)
     moeda: Mapped[str] = mapped_column(String(3), server_default="EUR")
     parser_id: Mapped[str] = mapped_column(Text)
     config_importacao: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
-    titular_id: Mapped[int | None] = mapped_column(ForeignKey("utilizadores.id"))  # NULL = conjunta
+    dono_id: Mapped[int] = mapped_column(ForeignKey("utilizadores.id", ondelete="CASCADE"))
     arquivada: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     criada_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+    __table_args__ = (Index("uq_contas_dono_nome", "dono_id", "nome", unique=True),)
 
 
 class Importacao(Base):
@@ -118,9 +119,16 @@ class Categoria(Base):
     cor: Mapped[str | None] = mapped_column(Text)
     icone: Mapped[str | None] = mapped_column(Text)
     ativa: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    dono_id: Mapped[int] = mapped_column(ForeignKey("utilizadores.id", ondelete="CASCADE"))
     __table_args__ = (
         CheckConstraint("tipo IN ('despesa','receita','transferencia')", name="ck_categorias_tipo"),
-        Index("uq_categorias_parent_nome", func.coalesce(text("parent_id"), 0), "nome", unique=True),
+        Index(
+            "uq_categorias_dono_parent_nome",
+            "dono_id",
+            func.coalesce(text("parent_id"), 0),
+            "nome",
+            unique=True,
+        ),
     )
 
 
@@ -136,6 +144,7 @@ class Regra(Base):
     conta_id: Mapped[int | None] = mapped_column(ForeignKey("contas.id"))
     prioridade: Mapped[int] = mapped_column(Integer, server_default="100")
     origem: Mapped[str] = mapped_column(Text)
+    dono_id: Mapped[int] = mapped_column(ForeignKey("utilizadores.id", ondelete="CASCADE"))
     ativa: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     n_aplicacoes: Mapped[int] = mapped_column(Integer, server_default="0")
     criado_por: Mapped[int | None] = mapped_column(ForeignKey("utilizadores.id"))
@@ -151,6 +160,7 @@ class Regra(Base):
             name="ck_regras_montante",
         ),
         Index("ix_regras_ativa_prioridade", "ativa", text("prioridade DESC")),
+        Index("ix_regras_dono", "dono_id"),
     )
 
 

@@ -63,10 +63,10 @@ def _pct(num: Decimal, den: Decimal) -> str | None:
     return None if den == 0 else str((num / den * 100).quantize(Decimal("0.01")))
 
 
-def _period(db: Session, d0: date | None, d1: date | None) -> tuple[date, date]:
+def _period(db: Session, scope, d0: date | None, d1: date | None) -> tuple[date, date]:
     if d0 and d1:
         return d0, d1
-    last = db.scalar(select(func.max(Movimento.data_movimento))) or date.today()
+    last = db.scalar(select(func.max(Movimento.data_movimento)).where(*scope)) or date.today()
     return d0 or last.replace(day=1), d1 or last.replace(day=calendar.monthrange(last.year, last.month)[1])
 
 
@@ -112,13 +112,12 @@ def summary(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
-    titular: str | None = None,
     incluir_transferencias: bool = True,
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    scope = scope_conds(conta_id, titular)
-    d0, d1 = _period(db, data_de, data_ate)
+    scope = scope_conds(auth.utilizador, conta_id)
+    d0, d1 = _period(db, scope, data_de, data_ate)
     desp, rec = _totals(db, scope, incluir_transferencias, d0, d1)
     desp_x, rec_x = _totals(db, scope, False, d0, d1)
     p0, p1 = _previous(d0, d1)
@@ -135,7 +134,7 @@ def summary(
     transf = ZERO if incluir_transferencias else _transfer_net(db, scope, d0, d1)  # senão já estão nos totais
     diferenca = None if inicio is None or fim is None else fim - (inicio + rec - desp + transf)
     por_categorizar = db.scalar(
-        select(func.count()).select_from(Movimento).where(Movimento.categoria_id.is_(None))
+        select(func.count()).select_from(Movimento).where(Movimento.categoria_id.is_(None), *scope)
     )
     return {
         "periodo": {"data_de": d0, "data_ate": d1},
@@ -170,14 +169,13 @@ def by_category(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
-    titular: str | None = None,
     incluir_transferencias: bool = True,
     nivel: str = Query("filho", pattern="^(filho|pai)$"),
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    scope = scope_conds(conta_id, titular)
-    d0, d1 = _period(db, data_de, data_ate)
+    scope = scope_conds(auth.utilizador, conta_id)
+    d0, d1 = _period(db, scope, data_de, data_ate)
     group_id = (
         func.coalesce(Categoria.parent_id, Categoria.id) if nivel == "pai" else Categoria.id
     )  # pai: sobe ao pai
@@ -187,7 +185,7 @@ def by_category(
         .group_by(group_id)
     )
     rows = db.execute(stmt).all()
-    names = {c.id: c for c in db.scalars(select(Categoria))}
+    names = {c.id: c for c in db.scalars(select(Categoria).where(Categoria.dono_id == auth.utilizador.id))}
     total = sum((Decimal(r[1]) for r in rows), ZERO)
     items = [
         {
@@ -214,18 +212,17 @@ def monthly(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
-    titular: str | None = None,
     incluir_transferencias: bool = True,
     granularidade: str = Query("mes", pattern="^(mes|ano)$"),
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
-    scope = scope_conds(conta_id, titular)
+    scope = scope_conds(auth.utilizador, conta_id)
     if not data_ate:
-        data_ate = db.scalar(select(func.max(Movimento.data_movimento))) or date.today()
+        data_ate = db.scalar(select(func.max(Movimento.data_movimento)).where(*scope)) or date.today()
     if not data_de:
         if granularidade == "ano":  # desde o ano do 1.º movimento
-            first = db.scalar(select(func.min(Movimento.data_movimento))) or data_ate
+            first = db.scalar(select(func.min(Movimento.data_movimento)).where(*scope)) or data_ate
             data_de = date(first.year, 1, 1)
         else:
             data_de = _month_start(data_ate.replace(day=1), 11)
@@ -260,16 +257,15 @@ def category_matrix(
     data_de: date | None = None,
     data_ate: date | None = None,
     conta_id: int | None = None,
-    titular: str | None = None,
     incluir_transferencias: bool = True,
     nivel: str = Query("pai", pattern="^(filho|pai)$"),
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
     """Despesas por categoria × mês (só montante < 0, como em by-category). Por omissão, o ano do último movimento."""
-    scope = scope_conds(conta_id, titular)
+    scope = scope_conds(auth.utilizador, conta_id)
     if not data_de or not data_ate:
-        last = db.scalar(select(func.max(Movimento.data_movimento))) or date.today()
+        last = db.scalar(select(func.max(Movimento.data_movimento)).where(*scope)) or date.today()
         data_de, data_ate = data_de or date(last.year, 1, 1), data_ate or date(last.year, 12, 31)
     group_id = func.coalesce(Categoria.parent_id, Categoria.id) if nivel == "pai" else Categoria.id
     mes = func.date_trunc("month", Movimento.data_movimento)
@@ -282,7 +278,9 @@ def category_matrix(
     while cur <= data_ate:
         meses.append(cur.strftime("%Y-%m"))
         cur = _month_start(cur, -1)
-    names = {c.id: c.nome for c in db.scalars(select(Categoria))}
+    names = {
+        c.id: c.nome for c in db.scalars(select(Categoria).where(Categoria.dono_id == auth.utilizador.id))
+    }
     cells: dict[int | None, dict[str, Decimal]] = {}
     for gid, m, v in rows:
         cells.setdefault(gid, {})[m.strftime("%Y-%m")] = Decimal(v)
@@ -312,8 +310,7 @@ def category_matrix(
 def kpis(
     data_ate: date | None = None,
     conta_id: int | None = None,
-    titular: str | None = None,
-    _: Auth = Depends(require_auth),
+    auth: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
     """Reserva (meses), taxa de poupança acumulada/média e dinheiro investido, até `data_ate`.
@@ -321,7 +318,7 @@ def kpis(
     O mês em curso (o do último movimento) fica de fora das taxas e da reserva: o salário entra no fim do mês
     anterior e o investimento sai no início, por isso um mês incompleto distorce. Taxas sem transferências.
     """
-    scope = scope_conds(conta_id, titular)
+    scope = scope_conds(auth.utilizador, conta_id)
     last = db.scalar(select(func.max(Movimento.data_movimento)).where(*scope))
     first = db.scalar(select(func.min(Movimento.data_movimento)).where(*scope))
     if last is None or first is None:

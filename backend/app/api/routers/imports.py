@@ -41,14 +41,14 @@ def preview(
 
 
 @router.get("")
-def list_imports(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    return svc.list_imports(db)
+def list_imports(auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    return svc.list_imports(db, auth.utilizador.id)
 
 
 @router.get("/{imp_id}")
-def get_import(imp_id: int, _: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+def get_import(imp_id: int, auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
     try:
-        return svc.get_view(db, imp_id)
+        return svc.get_view(db, imp_id, auth.utilizador.id)
     except ServiceError as e:
         _raise(e)
 

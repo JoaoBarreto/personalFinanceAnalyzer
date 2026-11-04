@@ -37,6 +37,10 @@ def _extrato_com_excecoes():
     ]
 
 
+def _uid(db):
+    return db.scalar(select(Utilizador.id).where(Utilizador.username == "joao"))
+
+
 def test_reset_guarda_cada_escolha_manual_e_reaplica_exatamente(api, db):
     rows = _extrato_com_excecoes()
     import_all(api, rows)
@@ -54,14 +58,14 @@ def test_reset_guarda_cada_escolha_manual_e_reaplica_exatamente(api, db):
     api.post("/api/rules/apply")  # esta linha fica categorizada POR REGRA (não é manual)
     antes = _por_linha(api)
     n_cats, n_regras = N(db, Categoria), N(db, Regra)
-    assert reset.preview(db) == {
+    assert reset.preview(db, _uid(db)) == {
         "movimentos": 5,
         "importacoes": 1,
         "categorizacoes_manuais": 3,
         "descricoes_com_excecoes": 1,
     }
 
-    r = reset.reset_movements(db)
+    r = reset.reset_movements(db, _uid(db))
     assert (
         r["movimentos_apagados"] == 5
         and r["importacoes_apagadas"] == 1
@@ -84,7 +88,7 @@ def test_so_se_reaplica_a_linhas_que_coincidem_em_conta_data_e_descricao(api, db
     sup = cat_id(db, "Supermercado")
     for t in txs(api)["items"]:
         api.patch(f"/api/transactions/{t['id']}", json={"categoria_id": sup})
-    reset.reset_movements(db)
+    reset.reset_movements(db, _uid(db))
     assert N(db, CategorizacaoGuardada) == 5
     # um extrato parcial (só 2 das linhas) + uma linha com a mesma descrição mas OUTRA data
     parcial = [rows[0], rows[3], ("07-07-2026", "07-07-2026", rows[0][2], D("-1.00"))]
@@ -122,7 +126,7 @@ def test_cli_mostra_o_que_vai_acontecer_e_pode_ser_cancelada(api, db, monkeypatc
         api.patch(f"/api/transactions/{t['id']}", json={"categoria_id": c})
     monkeypatch.setattr("builtins.input", lambda _="": "nao")
     with pytest.raises(SystemExit, match="Cancelado"):
-        reset_movements(yes=False)
+        reset_movements("joao", yes=False)
     err = capsys.readouterr().err
     assert (
         "Vai apagar 5 movimentos" in err
@@ -130,7 +134,7 @@ def test_cli_mostra_o_que_vai_acontecer_e_pode_ser_cancelada(api, db, monkeypatc
     )
     assert N(db, Movimento) == 5  # nada foi apagado
     monkeypatch.setattr("builtins.input", lambda _="": "APAGAR")
-    reset_movements(yes=False)
+    reset_movements("joao", yes=False)
     db.expire_all()
     assert N(db, Movimento) == 0 and N(db, CategorizacaoGuardada) == 2
 
@@ -139,13 +143,13 @@ def test_reset_apaga_tambem_previews_e_importacoes_revertidas(api, db):
     up(api, build_csv())  # fica em preview
     other = confirm(api, up(api, build_csv(ROWS[:3])).json()["id"]).json()["id"]
     api.delete(f"/api/imports/{other}")  # revertida
-    assert reset.reset_movements(db)["importacoes_apagadas"] == 2
+    assert reset.reset_movements(db, _uid(db))["importacoes_apagadas"] == 2
 
 
 def test_reset_repetido_nao_faz_nada(api, db):
     import_all(api)
-    reset.reset_movements(db)
-    r = reset.reset_movements(db)
+    reset.reset_movements(db, _uid(db))
+    r = reset.reset_movements(db, _uid(db))
     assert (
         r["movimentos_apagados"] == 0
         and r["importacoes_apagadas"] == 0
@@ -160,7 +164,7 @@ def test_apagar_categoria_com_categorizacoes_guardadas_nao_da_erro(api, db):
     nova = api.post("/api/categories", json={"nome": "Educação", "tipo": "despesa"}).json()
     tid = txs(api)["items"][0]["id"]
     api.patch(f"/api/transactions/{tid}", json={"categoria_id": nova["id"]})
-    reset.reset_movements(db)
+    reset.reset_movements(db, _uid(db))
     assert N(db, CategorizacaoGuardada) == 1
     assert (
         api.delete(f"/api/categories/{nova['id']}").status_code == 204

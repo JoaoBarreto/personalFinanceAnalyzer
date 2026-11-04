@@ -18,6 +18,6 @@ class UserOut(BaseModel):
 
 
 @router.get("", response_model=list[UserOut])
-def list_users(_: Auth = Depends(require_auth), db: Session = Depends(get_db)):
-    """Utilizadores ativos (para escolher titulares e mostrar quem categorizou). Sem dados sensíveis."""
-    return db.scalars(select(Utilizador).where(Utilizador.ativo.is_(True)).order_by(Utilizador.id)).all()
+def list_users(auth: Auth = Depends(require_auth), db: Session = Depends(get_db)):
+    """Só o próprio utilizador: os outros utilizadores não são visíveis (isolamento por dono)."""
+    return db.scalars(select(Utilizador).where(Utilizador.id == auth.utilizador.id)).all()
