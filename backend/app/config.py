@@ -30,3 +30,10 @@ COOKIE_SECURE_MODE = os.environ.get("COOKIE_SECURE", "auto").lower()
 TRUSTED_PROXIES = {p.strip() for p in os.environ.get("TRUSTED_PROXIES", "").split(",") if p.strip()}
 LOGIN_MAX_FAILURES = int(os.environ.get("LOGIN_MAX_FAILURES", "5"))
 LOGIN_WINDOW_SECONDS = int(os.environ.get("LOGIN_WINDOW_SECONDS", "300"))
+
+# Registo de utilizadores novos pela web. Com ZERO utilizadores o registo está sempre aberto (é assim que se cria o
+# primeiro); depois disso depende desta opção. Desligar quando a app está exposta a quem não deve criar contas.
+ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("true", "1", "yes")
+# Limite de tentativas de registo por IP (contam TODAS, não só as falhadas): evita criar contas em massa
+REGISTER_MAX = int(os.environ.get("REGISTER_MAX", "20"))
+REGISTER_WINDOW_SECONDS = int(os.environ.get("REGISTER_WINDOW_SECONDS", "3600"))

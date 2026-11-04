@@ -8,21 +8,15 @@ from sqlalchemy import select
 
 from .db import SessionLocal
 from .models import Utilizador
-from .security import hash_password
-from .services import reset
-from .services.category_seed import seed_categories
+from .services import reset, users
 
 
 def create_user(username: str, nome: str, password: str) -> None:
-    if len(password) < 10:
-        raise SystemExit("A password deve ter pelo menos 10 caracteres.")
     with SessionLocal() as db:
-        if db.scalar(select(Utilizador).where(Utilizador.username == username)):
-            raise SystemExit(f"O utilizador {username!r} já existe.")
-        user = Utilizador(username=username, nome=nome, password_hash=hash_password(password))
-        db.add(user)
-        db.flush()
-        seed_categories(db, user.id)  # cada utilizador tem as suas categorias
+        try:
+            users.create_user(db, username, nome, password)
+        except users.UserError as e:
+            raise SystemExit(str(e)) from e
         db.commit()
 
 

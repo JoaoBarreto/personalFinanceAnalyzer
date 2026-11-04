@@ -1,4 +1,4 @@
-"""PRD §9: sem autenticação não há acesso a nenhum endpoint, exceto /api/health e /api/auth/login.
+"""PRD §9: sem autenticação não há acesso a nenhum endpoint, exceto /api/health, /api/auth/login, /api/auth/register e /api/auth/config.
 
 Cobre automaticamente todas as rotas que vierem a ser adicionadas.
 """
@@ -9,7 +9,13 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-PUBLIC = {("GET", "/api/health"), ("POST", "/api/auth/login")}
+# Públicas: exatamente estas. O registo e a config servem o ecrã de login (o registo tem limite por IP e pode ser desligado).
+PUBLIC = {
+    ("GET", "/api/health"),
+    ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/register"),
+    ("GET", "/api/auth/config"),
+}
 
 
 def test_todas_as_rotas_exigem_sessao():
