@@ -91,6 +91,8 @@ gen_password() {
   if command -v openssl >/dev/null 2>&1; then openssl rand -base64 24 | tr -d '/+=\n' | head -c 24
   else LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true; fi
 }
+# «~» e «~/x» escritos à mão (no prompt ou em flags) não são expandidos pelo bash: expandem-se aqui
+expand_tilde() { local p="$1"; if [[ "$p" == "~" ]]; then p="$HOME"; elif [[ "$p" == "~/"* ]]; then p="$HOME/${p:2}"; fi; printf '%s' "$p"; }
 env_get() { [[ -f .env ]] && sed -n "s/^$1=//p" .env | tail -n1 || true; }
 port_busy() { command -v ss >/dev/null 2>&1 && ss -ltn "sport = :$1" 2>/dev/null | grep -q LISTEN; }
 
@@ -186,8 +188,10 @@ if [[ -z "$BACKUP_FROM" && $YES -eq 0 && $EXISTING -eq 0 ]]; then
     ask "Pasta da instância antiga" ""; BACKUP_FROM="$REPLY"
   fi
 fi
+BACKUP_FROM="$(expand_tilde "$BACKUP_FROM")"
+RESTORE="$(expand_tilde "$RESTORE")"
 if [[ -n "$BACKUP_FROM" ]]; then
-  [[ -d "$BACKUP_FROM" ]] || die "A pasta $BACKUP_FROM não existe."
+  [[ -d "$BACKUP_FROM" ]] || die "A pasta $BACKUP_FROM não existe. Veja o caminho certo com «ls ~/docker» (a pasta onde a versão antiga foi instalada)."
   OLD_PROJECT="${BACKUP_PROJECT:-$(basename "$(cd "$BACKUP_FROM" && pwd)" | tr '[:upper:]' '[:lower:]')}"
   RESTORE_OUT="$HOME/backup-$(date +%Y%m%d-%H%M%S).sql"
   say "Backup de «$OLD_PROJECT» (só leitura) para $RESTORE_OUT"
