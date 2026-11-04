@@ -72,7 +72,7 @@ Tudo corre via `docker-compose.yml` com três serviços: `frontend`, `backend` e
 
 ### 3.1. Contas
 - O utilizador cria uma ou mais contas bancárias (ex.: "Bankinter Ordenado", "Bankinter Poupança"). Só contas à ordem/poupança; não há cartões de crédito.
-- Cada conta tem banco, IBAN mascarado (opcional), moeda, o **parser** associado e um **titular** opcional (para filtrar "minhas / da esposa / conjuntas" no dashboard).
+- Cada conta tem banco, IBAN mascarado (opcional), moeda, o **parser** associado e um **titular** opcional (para filtrar por titular; substituído entretanto pelo isolamento por dono, ver o quadro no topo).
 
 ### 3.1.1. Utilizadores
 - **2 utilizadores** com login próprio. Ambos veem e editam os mesmos dados (contas, movimentos, regras, categorias).
