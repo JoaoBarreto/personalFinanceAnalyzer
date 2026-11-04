@@ -212,14 +212,15 @@ def rows_csv(content: bytes):
             continue
     sample = text[:5000]
     delim = max(",;\t|", key=sample.count)
-    print(
-        f"codificação: {enc}; separador: {delim!r}; fim de linha: {'CRLF' if chr(13) in text[:5000] else 'LF'}"
-    )
     rows = [
         [("texto" if c.strip() else "vazio", c, "") for c in line]
         for line in csv.reader(io.StringIO(text), delimiter=delim)
     ]
-    yield "csv", rows, ""
+    yield (
+        "csv",
+        rows,
+        f"codificação: {enc}; separador: {delim!r}; fim de linha: {'CRLF' if chr(13) in sample else 'LF'}",
+    )
 
 
 def find_header(rows) -> int | None:
