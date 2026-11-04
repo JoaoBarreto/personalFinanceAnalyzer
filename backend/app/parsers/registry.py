@@ -8,7 +8,21 @@ PARSERS: dict[str, StatementParser] = {
 }
 
 
-def get_parser(parser_id: str) -> StatementParser | None:
+GENERIC = "generico"  # parser guiado por um modelo guardado na conta (config_importacao)
+
+
+def get_parser(parser_id: str, config: dict | None = None) -> StatementParser | None:
+    """Parser da conta. O genérico precisa do modelo da conta; se este for inválido não há parser."""
+    if parser_id == GENERIC:
+        from pydantic import ValidationError
+
+        from .generic.parser import GenericParser
+        from .generic.template import Template
+
+        try:
+            return GenericParser(Template.model_validate(config or {}))
+        except ValidationError:
+            return None
     return PARSERS.get(parser_id)
 
 

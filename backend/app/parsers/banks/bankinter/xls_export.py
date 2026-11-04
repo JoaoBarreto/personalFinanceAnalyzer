@@ -12,12 +12,10 @@ sinal típico de o ficheiro ter sido aberto e guardado noutra aplicação.
 
 from __future__ import annotations
 
-import math
-from decimal import Decimal
-
 import xlrd
 
 from ...base import ParsedStatement
+from ...money import cents
 from .csv_export import _DATE_LIKE_RE, _DATE_RE, EXPECTED_HEADER, _fail, parse_rows
 
 OLE_SIGNATURE = bytes.fromhex("d0cf11e0a1b11ae1")  # contentor binário do .xls
@@ -28,14 +26,6 @@ _NUM_COLS = ("montante", "saldo")
 
 def is_xls(content: bytes) -> bool:
     return content.startswith(OLE_SIGNATURE)
-
-
-def _cents(v: float) -> Decimal | None:
-    """Valor com exatamente até 2 casas, como Decimal exato; None se tiver mais (ou não for finito)."""
-    c = v * 100
-    if not math.isfinite(c) or abs(c) > 1e15 or abs(c - round(c)) > 1e-6:
-        return None
-    return Decimal(round(c)).scaleb(-2)
 
 
 def _text(cell: xlrd.sheet.Cell) -> str:
@@ -93,7 +83,7 @@ def parse_xls(content: bytes) -> ParsedStatement:
                         r + 1,
                     )
                     continue
-                d = _cents(cell.value)
+                d = cents(cell.value)
                 if d is None:
                     bad(f"{name}:casas", f"{name.capitalize()} com mais de 2 casas decimais", r + 1)
                     continue

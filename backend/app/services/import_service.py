@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from ..models import Conta, Importacao, Movimento
 from ..parsers.base import ParsedStatement, ParseError
 from ..parsers.reconcile import chronological_breaks
-from ..parsers.registry import PENDING, get_parser
+from ..parsers.registry import GENERIC, PENDING, get_parser
 from .categorizer import categorize
 from .dedup import DedupResult, Row, deduplicate
 from .normalizer import normalize
@@ -225,7 +225,9 @@ def preview(db: Session, conta_id: int, filename: str, content: bytes, user_id: 
             "Este banco ainda não está suportado: não é possível importar extratos nesta conta. "
             "Em «Contas» pode ver a estrutura mascarada do extrato para pedir o suporte.",
         )
-    parser = get_parser(conta.parser_id)
+    parser = get_parser(conta.parser_id, conta.config_importacao)
+    if parser is None and conta.parser_id == GENERIC:
+        raise ServiceError(422, "O modelo de importação desta conta é inválido; configure a conta de novo.")
 
     def fail(msg: str) -> ServiceError:
         db.add(

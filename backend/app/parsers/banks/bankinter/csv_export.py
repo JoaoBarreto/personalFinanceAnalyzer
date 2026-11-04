@@ -20,8 +20,8 @@ import re
 from datetime import date, datetime
 from decimal import Decimal
 
-from ...base import ParsedMovement, ParsedStatement, ParseError
-from ...reconcile import chronological_breaks, detect_order
+from ...base import ParsedStatement, ParseError
+from ...build import build_statement
 
 BANK_ID = "bankinter_csv"
 EXPECTED_HEADER = (
@@ -206,27 +206,7 @@ def parse_rows(rows: list[list[str]]) -> ParsedStatement:
         for dm, dv, desc, m, sd in cells
     ]
 
-    ordem, ambigua = detect_order([(r[3], r[4]) for r in raw])
-    chrono = raw if ordem == "asc" else raw[::-1]
-
-    movimentos: list[ParsedMovement] = []
-    counter: dict[date, int] = {}
-    for dm, dv, desc, montante, saldo in chrono:
-        n = counter.get(dm, 0)
-        counter[dm] = n + 1
-        movimentos.append(ParsedMovement(dm, dv, desc, montante, saldo, n))
-
-    return ParsedStatement(
-        moeda=moeda,
-        periodo_inicio=periodo_inicio or movimentos[0].data_movimento,
-        periodo_fim=periodo_fim or movimentos[-1].data_movimento,
-        ordem_ficheiro=ordem,
-        ordem_ambigua=ambigua,
-        saldo_inicial=chrono[0][4] - chrono[0][3],
-        saldo_final=chrono[-1][4],
-        movimentos=movimentos,
-        quebras=chronological_breaks([(r[3], r[4]) for r in chrono]),
-    )
+    return build_statement(raw, moeda, periodo_inicio, periodo_fim)
 
 
 class BankinterCsvParser:
