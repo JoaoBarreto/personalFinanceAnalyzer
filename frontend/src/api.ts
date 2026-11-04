@@ -56,7 +56,7 @@ export function errorMessage(e: unknown): string {
 
 export type Me = { id: number; username: string; nome: string; csrf_token: string };
 export type Category = { id: number; nome: string; parent_id: number | null; tipo: string; cor: string | null; ativa: boolean; n_movimentos?: number };
-export type Account = { id: number; nome: string; banco: string; parser_id: string; moeda: string; titular_id: number | null; arquivada: boolean };
+export type Account = { id: number; nome: string; banco: string; parser_id: string; moeda: string; arquivada: boolean };
 export type User = { id: number; username: string; nome: string };
 export type Tx = {
   id: number; conta_id: number; data_movimento: string; descricao_original: string; descricao_normalizada: string;

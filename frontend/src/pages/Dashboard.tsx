@@ -4,7 +4,6 @@ import KpiRow, { type Kpis } from "../components/KpiRow";
 import CategoryMatrix, { type Matrix } from "../components/CategoryMatrix";
 import { CategoryBars, PeriodChart, type CatItem, type PeriodItem } from "../components/charts";
 import { CoverageBanner } from "../components/Coverage";
-import TitularSelect from "../components/TitularSelect";
 import { useAsync } from "../hooks";
 import InfoTip from "../components/InfoTip";
 import { dataPt, eur, mesPt, pct } from "../lib/format";
@@ -41,13 +40,11 @@ export default function Dashboard() {
   const modo: "mes" | "ano" = sp.get("modo") === "ano" ? "ano" : "mes";
   const mes = sp.get("mes") ?? "";
   const ano = sp.get("ano") ?? "";
-  const titular = sp.get("titular") ?? "";
   const setParam = (k: string, v: string) =>
     setSp((prev) => { const n = new URLSearchParams(prev); if (v) n.set(k, v); else n.delete(k); return n; }, { replace: true });
   const setModo = (m: "mes" | "ano") => setParam("modo", m === "ano" ? "ano" : "");
   const setMes = (v: string) => setParam("mes", v);
   const setAno = (v: string) => setParam("ano", v);
-  const setTitular = (v: string) => setParam("titular", v);
   const nav = useNavigate();
 
   // O período por omissão é o do último movimento importado (e não o mês corrente, que pode estar vazio).
@@ -59,22 +56,22 @@ export default function Dashboard() {
   const ready = !cov.loading;
   const ym = modo === "ano" ? anoEf : mesEf;
   const params = !ym ? {} : modo === "ano" ? { data_de: `${ym}-01-01`, data_ate: `${ym}-12-31` } : { data_de: `${ym}-01`, data_ate: lastDay(ym) };
-  const common = { ...params, titular };
-  const deps = [ready, modo, ym, titular];
+  const common = { ...params };
+  const deps = [ready, modo, ym];
 
   const summary = useAsync(() => (ready ? api.get<Summary>("/api/analytics/summary", common) : Promise.resolve(null)), deps);
-  const kpis = useAsync(() => (ready ? api.get<Kpis>("/api/analytics/kpis", { titular, ...("data_ate" in params ? { data_ate: params.data_ate } : {}) }) : Promise.resolve(null)), deps);
+  const kpis = useAsync(() => (ready ? api.get<Kpis>("/api/analytics/kpis", { ...("data_ate" in params ? { data_ate: params.data_ate } : {}) }) : Promise.resolve(null)), deps);
   const cats = useAsync(() => (ready ? api.get<{ itens: CatItem[] }>("/api/analytics/by-category", common) : Promise.resolve(null)), deps);
   // Gráfico do período: em «Mês», os 12 meses até ao mês escolhido; em «Ano», janeiro–dezembro desse ano.
   const periodos = useAsync(
-    () => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", modo === "ano" ? common : { titular, data_ate: params.data_ate }) : Promise.resolve(null)),
+    () => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", modo === "ano" ? common : { data_ate: params.data_ate }) : Promise.resolve(null)),
     deps,
   );
-  const anos = useAsync(() => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", { granularidade: "ano", titular }) : Promise.resolve(null)), [ready, titular]);
+  const anos = useAsync(() => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", { granularidade: "ano" }) : Promise.resolve(null)), [ready]);
   const anoMatriz = ym.slice(0, 4);
   const matrix = useAsync(
-    () => (ready && anoMatriz ? api.get<Matrix>("/api/analytics/category-matrix", { data_de: `${anoMatriz}-01-01`, data_ate: `${anoMatriz}-12-31`, titular }) : Promise.resolve(null)),
-    [ready, anoMatriz, titular],
+    () => (ready && anoMatriz ? api.get<Matrix>("/api/analytics/category-matrix", { data_de: `${anoMatriz}-01-01`, data_ate: `${anoMatriz}-12-31`}) : Promise.resolve(null)),
+    [ready, anoMatriz],
   );
 
   const s = summary.data;
@@ -87,7 +84,6 @@ export default function Dashboard() {
     const q = new URLSearchParams({ so_despesas: "1" });
     const per = params as { data_de?: string; data_ate?: string };
     if (per.data_de && per.data_ate) { q.set("data_de", per.data_de); q.set("data_ate", per.data_ate); }
-    if (titular) q.set("titular", titular);
     if (id === null) q.set("sem_categoria", "true"); else q.set("categoria_id", String(id));
     nav(`/movimentos?${q}`, { state: { from: "dashboard" } });
   };
@@ -115,7 +111,6 @@ export default function Dashboard() {
           )}
           <button onClick={() => step(1)} aria-label={modo === "ano" ? "Ano seguinte" : "Mês seguinte"} disabled={!ym}>›</button>
         </div>
-        <TitularSelect value={titular} onChange={setTitular} />
         {s && s.n_por_categorizar > 0 && <Link className="badge warn" to="/rever">{s.n_por_categorizar} por categorizar</Link>}
       </div>
       <CoverageBanner />
@@ -165,7 +160,7 @@ export default function Dashboard() {
             Despesas por categoria
             <InfoTip title="Como se calcula">
               <p>Dinheiro que <strong style={{ display: "inline" }}>saiu</strong> da conta {noPeriodo}, somado por categoria. Contam os movimentos de saída (valor negativo); entradas e reembolsos não são descontados.</p>
-              <p>Respeita o filtro de titular.</p>
+              
               <p>A percentagem é o valor da categoria ÷ total das despesas do período (somam 100 %).</p>
               <p>«Por categorizar» são movimentos ainda sem categoria; «Outros (N)» junta as N categorias mais pequenas. Clique numa barra para ver os movimentos.</p>
             </InfoTip>

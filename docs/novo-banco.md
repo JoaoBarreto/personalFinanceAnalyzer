@@ -1,4 +1,4 @@
-# Adicionar um banco novo (ex.: ActiveBank) e o extrato de outro utilizador
+# Adicionar um banco novo (ex.: ActiveBank) e contas de outros utilizadores
 
 Princípio: **nunca adivinhar o formato**. Cada banco tem um parser ESTRITO que só aceita o modelo exato do export original; qualquer desvio é recusado e nada é gravado. Extratos reais não entram no repositório nem são lidos por quem desenvolve: só se partilha a estrutura mascarada.
 
@@ -20,12 +20,12 @@ Correm na máquina do utilizador com `backend/.venv/bin/python scripts/...` (par
 4. **Implementar** em `backend/app/parsers/banks/<banco>/`: um parser com `can_parse` e `parse` (contrato em `parsers/base.py`), reutilizando a reconciliação por cadeia de saldos (`parsers/reconcile.py`). Dinheiro sempre em `Decimal` a partir do texto ou de cêntimos inteiros, nunca de float. Registar o `parser_id` em `parsers/registry.py`.
 5. **Testes sintéticos**: um gerador de ficheiros no `conftest.py` (como `build_csv`/`build_xls`) com valores escritos à mão e variantes inválidas de propósito (data errada, casas decimais a mais, coluna renomeada, outra folha). Os testes recusam desvios e aceitam o modelo exato. Nunca usar o ficheiro real nos testes versionados.
 6. **Validar no ficheiro real**: o utilizador corre `check_statement.py <banco> ficheiro` e cola o resultado. Se for recusado, ajusta-se pela mensagem agregada, sem relaxar a regra.
-7. **Conta e titular**: criar o utilizador (`make create-user`), depois a conta em «Contas» com o banco certo e o titular (ou conjunta). Importar, rever o preview (avisos de continuidade e duplicados) e confirmar.
+7. **Conta**: criar o utilizador (`make create-user`) se ainda não existir, depois a conta em «Contas» com o banco certo. Importar, rever o preview (avisos de continuidade e duplicados) e confirmar.
 8. **Conferir**: o saldo da conta tem de bater com o banco, e o aviso de cobertura não pode mostrar buracos. Só depois categorizar.
 9. **Commit**: apenas código, testes sintéticos e esta documentação. Nada de ficheiros reais, capturas com dados reais ou a saída mascarada completa se tiver informação identificável.
 
-## Segundo utilizador (ex.: a esposa)
+## Outros utilizadores
 
-- Cada utilizador entra com a sua conta; os dados são partilhados (sem papéis). A separação faz-se por **titular da conta** (filtro «titular» no dashboard e nos movimentos), ou conta conjunta.
-- Uma conta pertence a um banco (`banco`) e a um parser; a deduplicação é por conta, por isso os extratos dela não colidem com os do Bankinter.
-- As regras e categorias são comuns: as regras criadas para o Bankinter aplicam-se também aos movimentos dela, com o filtro de conta quando for preciso distinguir.
+- Qualquer utilizador novo é igual aos outros: o administrador cria-o (`make create-user`), ele entra e cria as suas contas e importa os seus extratos. Nada é partilhado: cada utilizador só vê as suas contas, movimentos, regras e categorias (recebe a sua cópia das categorias iniciais).
+- Cada conta pertence a um banco (`banco`) e a um parser; a deduplicação é por conta. Um banco novo, depois de ter parser, fica disponível para todos os utilizadores.
+- O isolamento é feito pela aplicação; quem administra o servidor tem acesso à base de dados.

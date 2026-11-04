@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, errorMessage, type Category, type Tx, type User } from "../api";
 import CategorySelect from "../components/CategorySelect";
-import TitularSelect from "../components/TitularSelect";
 import { useAsync } from "../hooks";
 import { dataPt, eur } from "../lib/format";
 import { suggestKeyword } from "../lib/keyword";
@@ -18,7 +17,7 @@ export default function Transactions() {
   const [err, setErr] = useState<string | null>(null);
   const page = Number(sp.get("page") ?? 1);
   const f = {
-    q: sp.get("q") ?? "", titular: sp.get("titular") ?? "", categoria_id: sp.get("categoria_id") ?? "", sem_categoria: sp.get("sem_categoria") ?? "",
+    q: sp.get("q") ?? "", categoria_id: sp.get("categoria_id") ?? "", sem_categoria: sp.get("sem_categoria") ?? "",
     data_de: sp.get("data_de") ?? "", data_ate: sp.get("data_ate") ?? "", incluir_transferencias: sp.get("transf") ?? "true",
     montante_max: sp.get("so_despesas") ? "-0.01" : "", page,
   };
@@ -104,7 +103,6 @@ export default function Transactions() {
         <form onSubmit={(e) => { e.preventDefault(); set("q", q); }}>
           <input type="search" placeholder="Pesquisar…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Pesquisar" />
         </form>
-        <TitularSelect value={f.titular} onChange={(v) => set("titular", v)} />
         <label>De <input type="date" value={f.data_de} onChange={(e) => set("data_de", e.target.value)} /></label>
         <label>Até <input type="date" value={f.data_ate} onChange={(e) => set("data_ate", e.target.value)} /></label>
         {cats.data && (

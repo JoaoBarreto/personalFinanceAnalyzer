@@ -10,7 +10,7 @@ Especificação completa: [PersonalFinances.md](PersonalFinances.md). Notas de t
 - **Reconciliar** pela cadeia de saldos do ficheiro, avisar de buracos entre extratos e evitar duplicados quando os períodos se sobrepõem.
 - **Categorizar**: regras (contém, começa por, igual, regex), histórico e categorização em lote por comerciante. As escolhas manuais nunca são sobrescritas e sobrevivem a reimportações.
 - **Dashboard**: receitas, despesas, poupança, taxa de poupança, reserva (meses), dinheiro investido/poupado fora da conta, evolução mensal, despesas por categoria.
-- **Utilizadores**: sessões no servidor, CSRF e limite de tentativas de login. Todos os utilizadores veem os mesmos dados; as contas podem ter titular ou ser conjuntas.
+- **Multiutilizador com isolamento**: cada utilizador só vê as suas contas, movimentos, regras e categorias (cada um recebe a sua cópia das categorias iniciais). Sessões no servidor, CSRF e limite de tentativas de login. O isolamento é na aplicação: quem administra o servidor tem acesso à base de dados.
 
 ## Stack
 
@@ -28,7 +28,7 @@ cp .env.example .env
 
 1. **Editar o `.env`**: pôr uma `POSTGRES_PASSWORD` forte. As restantes variáveis têm valores por omissão sensatos (ver a tabela abaixo). O `.env` nunca vai para o git.
 2. **Arrancar**: `docker compose up -d --build` (ou `make up`; com Podman, `make up COMPOSE="podman compose"`). No arranque o backend aplica as migrações e o seed de categorias em português, incluindo «Poupança/Investimento», sozinho.
-3. **Criar o primeiro utilizador** (pede a palavra-passe):
+3. **Criar o primeiro utilizador** (repita para cada pessoa; cada um só vê os seus dados) (pede a palavra-passe):
    ```bash
    make create-user USERNAME=joao NOME="João"
    ```
@@ -75,7 +75,7 @@ Opcionais, só no backend: `DATABASE_URL` (substitui as variáveis `POSTGRES_*`)
 
 - **Atualizar**: `git pull && docker compose up -d --build`. As migrações correm no arranque do backend; os dados mantêm-se no volume `pgdata`.
 - **Nunca** correr `docker compose down -v`: apaga o volume `pgdata` e todos os dados. `docker compose down` (sem `-v`) é seguro.
-- **Repor movimentos** (apaga movimentos e importações, mantém categorias, regras, contas e utilizadores; as categorizações manuais voltam a aplicar-se ao reimportar): `make reset-data`.
+- **Repor movimentos** de UM utilizador (apaga os seus movimentos e importações, mantém categorias, regras, contas e utilizadores; as categorizações manuais voltam a aplicar-se ao reimportar): `make reset-data USERNAME=joao`.
 - **Backup**: ainda não está automatizado. Por agora, copie a base de dados à mão e guarde a cópia fora da máquina:
   ```bash
   docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-$(date +%F).sql
