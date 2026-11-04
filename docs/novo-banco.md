@@ -12,11 +12,25 @@ Princípio: **nunca adivinhar o formato**. Cada banco tem um parser ESTRITO que 
 
 Correm na máquina do utilizador com `backend/.venv/bin/python scripts/...` (para `.xlsx`: `backend/.venv/bin/pip install openpyxl`). PDF não é suportado: pedir ao banco o extrato em `.xls`/`.xlsx`/`.csv`.
 
-## Pela aplicação (qualquer utilizador)
+## Pela aplicação (qualquer utilizador): sem código
 
-Em «Adicionar conta» (menu Trabalho, ou no dashboard vazio): 1) escolher o banco (a lista vem do registo de parsers; ou «Outro banco»), 2) dar nome à conta, 3) importar o extrato (banco suportado) ou, para um banco por suportar, carregar um extrato para ver só a **estrutura mascarada** (nada é gravado) e copiá-la para pedir o suporte. A conta de um banco por suportar fica com `parser_id = "pendente"` e recusa importações até ser mudada para um parser existente.
+Em «Adicionar conta» (menu Trabalho, ou no dashboard vazio): escolher o banco, dar nome à conta e, para um banco que ainda não existe na lista («Outro banco…»), **carregar o extrato** (.xls, .xlsx ou .csv, com coluna de saldo). A aplicação:
 
-## Passos para um banco novo (desenvolvimento)
+1. **Deteta** o formato (linha de cabeçalho, coluna da data e o seu formato, montante ou débito/crédito, saldo, separadores decimal e de milhares, codificação do CSV) e **verifica-o**: só propõe um modelo se a cadeia de saldos `saldo anterior + montante = saldo` fechar em todas as linhas; é isso que distingue o montante do saldo.
+2. **Pergunta** quando há ambiguidade (dia/mês: dd/mm contra mm/dd; várias combinações de colunas que fecham as contas). Nunca escolhe por si.
+3. Mostra o **texto original ao lado do valor lido** («1.234,50» → 1 234,50 €) e as contas a fechar. O utilizador confirma. Isto protege do erro de escala (um valor «-889.50» lido como -88950), que a reconciliação de saldos não apanha.
+4. Cria a conta com o modelo (`parser_id="generico"`, guardado em `contas.config_importacao`) e abre a pré-visualização da importação. O ficheiro nunca é gravado antes da pré-visualização.
+
+O parser genérico é tão estrito como o do Bankinter: cabeçalho igual ao do modelo (nome e ordem), datas só no formato do modelo, montantes com exatamente 2 casas e os separadores do modelo, uma só folha, nada com data depois do fim dos movimentos, datas em ordem. Qualquer desvio recusa o ficheiro inteiro. Se o banco mudar o formato do extrato, as importações são recusadas até a conta ser configurada de novo.
+
+**Limites:** exige coluna de saldo por movimento (sem saldo não há cadeia para reconciliar: o serviço de importação recusa linhas sem saldo); uma só folha; sem PDF. Se a deteção falhar, a conta pode ser criada «por suportar» (`parser_id="pendente"`) e a app mostra a estrutura do extrato com valores mascarados, para pedir suporte.
+
+Código: `parsers/generic/` (`template.py` valida o modelo contra valores fixos, `parser.py`, `detector.py`, `reader.py`); `POST /api/banks/detect` e `/verify`.
+
+## Passos para um banco com parser dedicado (desenvolvimento)
+
+Só faz falta para extratos que o parser genérico não consegue ler (PDF, várias folhas, sem saldo, layouts invulgares).
+
 
 1. **Exportar** o extrato no formato original do banco (de preferência Excel/CSV, com saldo por linha) e **não o abrir nem guardar noutra aplicação**: isso muda formatos (ex.: `-889.50` lido como `-88950`).
 2. **Mascarar**: `mask_statement.py ficheiro` e colar a saída na conversa. Se os nomes das colunas aparecerem como `xxxx`, confirmar que a linha do cabeçalho não tem dados pessoais e repetir com `--mostrar-rotulos`. Rever a saída antes de a colar.

@@ -99,7 +99,7 @@ Migrações à mão: `cd backend && DATABASE_URL=postgresql+psycopg://... .venv/
 
 ## Outros bancos e outros utilizadores
 
-Cada banco tem um parser estrito. Para adicionar um banco novo (ex.: ActiveBank) ou o extrato de outro utilizador, siga [docs/novo-banco.md](docs/novo-banco.md). Os scripts de suporte estão em `scripts/`: `mask_statement.py` (estrutura do ficheiro com valores mascarados) e `check_statement.py <banco> ficheiro` (o parser aceita-o?).
+Qualquer banco com extrato tabular (.xls, .xlsx ou .csv, com coluna de saldo) pode ser adicionado pelo próprio utilizador em «Adicionar conta»: a aplicação deteta o formato, verifica-o pela cadeia de saldos e pede confirmação com exemplos, sem código. Os detalhes e os limites estão em [docs/novo-banco.md](docs/novo-banco.md). Os scripts de suporte estão em `scripts/`: `mask_statement.py` (estrutura do ficheiro com valores mascarados) e `check_statement.py <banco> ficheiro` (o parser aceita-o?).
 
 ## Dados e privacidade
 
