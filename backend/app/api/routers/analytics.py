@@ -306,3 +306,75 @@ def category_matrix(
         "totais": totais,
         "total": _s(sum((Decimal(v) for v in totais.values()), ZERO)),
     }
+
+
+@router.get("/kpis")
+def kpis(
+    data_ate: date | None = None,
+    conta_id: int | None = None,
+    titular: str | None = None,
+    _: Auth = Depends(require_auth),
+    db: Session = Depends(get_db),
+):
+    """Reserva (meses), taxa de poupança acumulada/média e dinheiro investido, até `data_ate`.
+
+    O mês em curso (o do último movimento) fica de fora das taxas e da reserva: o salário entra no fim do mês
+    anterior e o investimento sai no início, por isso um mês incompleto distorce. Taxas sem transferências.
+    """
+    scope = scope_conds(conta_id, titular)
+    last = db.scalar(select(func.max(Movimento.data_movimento)).where(*scope))
+    first = db.scalar(select(func.min(Movimento.data_movimento)).where(*scope))
+    if last is None or first is None:
+        return {"reserva_meses": None, "taxa_ano": None, "taxa_6m": None, "investido": None}
+    ate = min(data_ate or last, last)
+    partial = ate.replace(day=1) == last.replace(day=1)  # o período acaba no mês do último movimento
+    fim_cheio = _month_start(ate.replace(day=1), 1) if partial else ate.replace(day=1)  # último mês completo
+    fim_cheio_dia = date(
+        fim_cheio.year, fim_cheio.month, calendar.monthrange(fim_cheio.year, fim_cheio.month)[1]
+    )
+
+    def window(start: date):
+        start = max(start, first.replace(day=1))
+        if start > fim_cheio:
+            return 0, ZERO, ZERO
+        months = (fim_cheio.year * 12 + fim_cheio.month) - (start.year * 12 + start.month) + 1
+        desp, rec = _totals(db, scope, False, start, fim_cheio_dia)
+        return months, desp, rec
+
+    m6, d6, r6 = window(_month_start(fim_cheio, 5))
+    ano_ini = date(ate.year, 1, 1)
+    ma, da, ra = window(ano_ini) if fim_cheio.year == ate.year else (0, ZERO, ZERO)
+    saldo = saldo_em(db, scope, ate)
+    reserva = None
+    if m6 >= 3 and d6 > 0 and saldo is not None:
+        reserva = str((saldo / (d6 / m6)).quantize(Decimal("0.1")))
+
+    mes = func.date_trunc("month", Movimento.data_movimento)
+    base = (
+        select(mes, func.sum(-Movimento.montante))
+        .select_from(Movimento)
+        .join(Categoria, Categoria.id == Movimento.categoria_id)
+        .where(Categoria.tipo == "transferencia", Movimento.data_movimento <= ate, *scope)
+        .group_by(mes)
+    )
+    por_mes = {r[0].strftime("%Y-%m"): Decimal(r[1]) for r in db.execute(base).all()}
+    serie, cur = [], _month_start(ate.replace(day=1), 11)
+    for _i in range(12):
+        k = cur.strftime("%Y-%m")
+        serie.append({"periodo": k, "valor": _s(por_mes.get(k, ZERO))})
+        cur = _month_start(cur, -1)
+    return {
+        "referencia": {
+            "ate": ate,
+            "ultimo_mes_completo": fim_cheio.strftime("%Y-%m"),
+            "mes_em_curso": partial,
+        },
+        "reserva_meses": reserva,
+        "taxa_ano": {"ano": ate.year, "meses": ma, "pct": _pct(ra - da, ra)},
+        "taxa_6m": {"meses": m6, "pct": _pct(r6 - d6, r6)},
+        "investido": {
+            "ano": _s(sum((v for k, v in por_mes.items() if k.startswith(str(ate.year))), ZERO)),
+            "total": _s(sum(por_mes.values(), ZERO)),
+            "serie": serie,
+        },
+    }

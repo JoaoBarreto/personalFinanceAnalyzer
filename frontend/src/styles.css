@@ -56,6 +56,10 @@ table.data .num { text-align: right; font-variant-numeric: tabular-nums; white-s
 .kpis { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: .75rem; margin: .5rem 0; }
 .hero, .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .15rem; }
 .kpi-label { color: var(--ink-2); font-size: .9rem; } .kpi-sub { color: var(--ink-2); }
+.kpis3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin: .5rem 0; }
+.minibars { display: flex; align-items: flex-end; gap: 3px; height: 2.2rem; margin-top: .35rem; }
+.minibar { flex: 1; background: var(--s1, #3b82f6); border-radius: 2px 2px 0 0; min-height: 2px; }
+@media (max-width: 700px) { .kpis3 { grid-template-columns: 1fr; } }
 .hero-value { font-size: 3.2rem; font-weight: 600; line-height: 1.1; }
 .tile-value { font-size: 1.6rem; font-weight: 600; }
 .delta { font-size: .85rem; } .delta.good { color: var(--good); } .delta.bad { color: var(--bad); } .delta.muted { color: var(--muted); }

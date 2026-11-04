@@ -1,5 +1,6 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Coverage } from "../api";
+import KpiRow, { type Kpis } from "../components/KpiRow";
 import CategoryMatrix, { type Matrix } from "../components/CategoryMatrix";
 import { CategoryBars, PeriodChart, type CatItem, type PeriodItem } from "../components/charts";
 import { CoverageBanner } from "../components/Coverage";
@@ -62,6 +63,7 @@ export default function Dashboard() {
   const deps = [ready, modo, ym, titular];
 
   const summary = useAsync(() => (ready ? api.get<Summary>("/api/analytics/summary", common) : Promise.resolve(null)), deps);
+  const kpis = useAsync(() => (ready ? api.get<Kpis>("/api/analytics/kpis", { titular, ...("data_ate" in params ? { data_ate: params.data_ate } : {}) }) : Promise.resolve(null)), deps);
   const cats = useAsync(() => (ready ? api.get<{ itens: CatItem[] }>("/api/analytics/by-category", common) : Promise.resolve(null)), deps);
   // Gráfico do período: em «Mês», os 12 meses até ao mês escolhido; em «Ano», janeiro–dezembro desse ano.
   const periodos = useAsync(
@@ -141,6 +143,7 @@ export default function Dashboard() {
               {modo === "mes" && <Delta v={s.media_6m.variacao_despesas_pct} upIsGood={false} label="média 6 meses" />}
             </div>
           </section>
+          {kpis.data && <KpiRow k={kpis.data} />}
           {s.saldo.inicio !== null && (
             <section className="card bridge" aria-label="Do saldo inicial ao final">
               <h2>Do saldo inicial ao final<InfoTip title="Do saldo inicial ao final"><p>Saldo inicial + receitas − despesas = saldo final.</p><p>Todos os movimentos contam, incluindo transferências e «Poupança/Investimento» (dinheiro enviado para a corretora, depósitos a prazo...). Se as contas não fecharem, faltam movimentos: veja o aviso de cobertura.</p></InfoTip></h2>

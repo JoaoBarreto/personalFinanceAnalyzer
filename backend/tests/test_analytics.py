@@ -108,3 +108,35 @@ def test_media_ignora_meses_anteriores_ao_primeiro_movimento(api, db):
         "variacao_despesas_pct": None,
     }  # sem histórico
     assert out["media_12m"]["despesas"] is None
+
+
+def _meses(n_meses=6):
+    rows = []
+    for m in range(5, 5 + n_meses):  # maio..outubro de 2026
+        rows += [
+            (f"02-{m:02d}-2026", f"02-{m:02d}-2026", f"TRF A CREDITO SEPA+ - SALARIO {m}", D("1000.00")),
+            (f"03-{m:02d}-2026", f"03-{m:02d}-2026", f"COMPRA 0000000.{m:02d} SUPERMERCADO", D("-400.00")),
+        ]
+    rows.append(("04-09-2026", "04-09-2026", "TRF INTERACTIVE BROKERS", D("-200.00")))
+    return sorted(rows, key=lambda r: (r[0][6:], r[0][3:5], r[0][:2]))
+
+
+def test_kpis_reserva_taxas_e_investido(api, db):
+    import_all(api, _meses())
+    ibkr = txs(api, q="INTERACTIVE")["items"][0]["id"]
+    api.patch(f"/api/transactions/{ibkr}", json={"categoria_id": cat_id(db, "Poupança/Investimento")})
+    k = get(api, "kpis")
+    assert k["referencia"]["mes_em_curso"] is True and k["referencia"]["ultimo_mes_completo"] == "2026-09"
+    # 5 meses completos (maio-setembro), outubro fica de fora: saldo 1000+6*600-200 = 4400; despesa média 400
+    assert k["taxa_6m"] == {"meses": 5, "pct": "60.00"}
+    assert k["taxa_ano"] == {"ano": 2026, "meses": 5, "pct": "60.00"}
+    assert k["reserva_meses"] == "11.0"
+    assert k["investido"]["total"] == "200.00" and k["investido"]["ano"] == "200.00"
+    assert len(k["investido"]["serie"]) == 12 and k["investido"]["serie"][-1]["periodo"] == "2026-10"
+    assert {s["periodo"]: s["valor"] for s in k["investido"]["serie"]}["2026-09"] == "200.00"
+
+
+def test_kpis_sem_meses_completos_nao_inventa_numeros(api, db):
+    import_all(api)  # só outubro (mês em curso)
+    k = get(api, "kpis")
+    assert k["reserva_meses"] is None and k["taxa_6m"]["pct"] is None and k["taxa_ano"]["pct"] is None
