@@ -2,7 +2,7 @@
 
 > **Versão:** 2.2 (contradições resolvidas e esquema da Fase 1 fechado; ver secções 4 e 10)
 > **Estado:** MVP implementado e em uso; a versão 0.2.0 (ramo `multiutilizador`) diverge desta especificação nos pontos do quadro seguinte.
-> **Âmbito:** Uso pessoal (2 utilizadores do mesmo agregado), self-hosted em Docker num mini-PC, com acesso remoto via Tailscale e sem dependência de APIs pagas.
+> **Âmbito:** Uso pessoal ou familiar (vários utilizadores, cada um com os seus dados), self-hosted em Docker num mini-PC, com acesso remoto via Tailscale e sem dependência de APIs pagas.
 > **Banco no MVP:** Bankinter Portugal.
 
 ---
@@ -38,7 +38,7 @@ A categorização é feita por um **motor de regras local** gerido pelo utilizad
 
 ### 1.2. Fora de âmbito (por agora)
 - Ligação direta aos bancos (Open Banking / PSD2).
-- Multiutilizador com dados separados por pessoa, papéis ou permissões. Há 2 logins (o utilizador e a esposa), mas **os dados são partilhados**.
+- Multiutilizador com dados separados por pessoa, papéis ou permissões. Há 2 logins (dois utilizadores do mesmo agregado), mas **os dados são partilhados**.
 - Cartões de crédito (não existem).
 - App móvel nativa.
 - OCR de extratos digitalizados (fica para a Fase 3).
@@ -388,7 +388,7 @@ Documentação automática via OpenAPI (`/docs`).
 - **Sem portas abertas no router nem exposição pública.** O acesso remoto é feito só pela tailnet.
 - O frontend (nginx) faz bind a `127.0.0.1`. O acesso via tailnet usa **`tailscale serve`**, que dá HTTPS automático com certificado válido em `https://<minipc>.<tailnet>.ts.net`. Assim não é preciso Caddy nem Traefik.
 - **Não usar `tailscale funnel`**: isso expõe a app à internet pública.
-- A esposa acede adicionando o dispositivo dela à tailnet (ou partilhando o nó com ela) e usa o login próprio na app.
+- Cada pessoa acede adicionando o seu dispositivo à tailnet (ou partilhando o nó com ela) e usa o seu login na app.
 - Opcional: ACLs da tailnet a restringir o acesso a este serviço aos dispositivos dos dois utilizadores.
 
 ### Segurança & Privacidade
@@ -525,7 +525,7 @@ personalFinanceAnalyzer/
 | # | Questão | Decisão | Impacto no PRD |
 |---|---|---|---|
 | 1 | Bancos no MVP | **Bankinter.** Excel/CSV como via principal; PDF na Fase 1b | 3.3.1, roadmap, estrutura de parsers |
-| 2 | Utilizadores | **2 logins** (utilizador + esposa), dados partilhados, sem papéis | 3.1.1, modelo de dados (`utilizadores`, `criado_por`, `titular`) |
+| 2 | Utilizadores | **2 logins** (dois utilizadores do mesmo agregado), dados partilhados, sem papéis | 3.1.1, modelo de dados (`utilizadores`, `criado_por`, `titular`) |
 | 3 | Implementação | **Mini-PC local, acesso via Tailscale** (`tailscale serve`, sem funnel) | Secção 6 (Implementação, Segurança, Backups) |
 | 4 | Cartões de crédito | **Não existem** | Removidos do âmbito; mantém-se a deteção de transferências entre contas próprias |
 | 5 | Chave de deduplicação | **Multiset `(conta, data_movimento, montante)`** refinado por `saldo_apos` só quando ambos os lados o têm; **sem** índice único na BD (rejeitaria movimentos legítimos). A descrição normalizada **sai** da chave | 4.1; remove `hash_dedup`. Resolve a contradição Excel+PDF |
@@ -543,7 +543,7 @@ personalFinanceAnalyzer/
 ### Próximos passos / input necessário
 - [ ] Exportação **Excel** de movimentos do Bankinter (1–3 meses), anonimizada.
 - [ ] Extrato **PDF** do Bankinter **do mesmo mês** de um dos Excel, anonimizado.
-- [ ] Confirmar se as contas da esposa também são Bankinter. Se forem de outro banco, entra na Fase 2.
+- [ ] Confirmar se as contas do segundo utilizador também são Bankinter. Se forem de outro banco, entra na Fase 2.
 - [ ] Indicar o destino do backup fora do mini-PC (NAS, disco USB, outro nó).
 
 ### Questões menores (podem ser decididas durante o desenvolvimento)

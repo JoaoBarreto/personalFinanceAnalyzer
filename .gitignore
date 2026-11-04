@@ -44,3 +44,7 @@ backups/
 # Exports reais para testes locais (nunca no repositório)
 backend/tests/fixtures/local/
 *.csv
+
+# Ficheiros locais (não versionar)
+docs/demo-dashboard.png
+scripts/mask_xls.py

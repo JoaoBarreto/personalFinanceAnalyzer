@@ -32,7 +32,7 @@ Assistente «Adicionar conta» (fase 2, ramo `multiutilizador`, versão 0.2.0): 
 Parser GENÉRICO por modelo (fase 3): `parsers/generic/` (`Template` guardado em `contas.config_importacao`, valores fixos e `extra=forbid`; `GenericParser` estrito; `detector.detect/verify`; `reader`), `parsers/build.py` (cauda partilhada com o Bankinter) e `parsers/money.py`. `POST /api/banks/detect|verify`. O detetor só propõe se a cadeia de saldos fechar; dd/mm ambíguo e várias combinações de colunas voltam como perguntas; o ecrã de confirmação mostra o texto original ao lado do valor lido (a reconciliação não apanha erros de escala uniformes). EXIGE coluna de saldo (o serviço de importação recusa linhas sem saldo). `get_parser(parser_id, config)`; `parser_id` ∈ parsers registados | `generico` | `pendente`. `/importar?preview=ID` abre a pré-visualização criada pelo assistente. Testes: `test_generic_parser.py` (estilos aceites e recusas, incluindo o caso `-889.50`), `test_generic_detector.py` (inclui o oráculo: o modelo detetado reproduz o parser do Bankinter em xls e csv).
 Por fazer (retomar daqui; estado a 2026-11-04, ramo `multiutilizador` enviado para o GitHub exceto `docs/demo-dashboard.png` e `scripts/mask_xls.py`, que ficam locais de propósito):
 1. Validar a v2 no mini-PC numa instalação AO LADO (`scripts/install.sh`, com backup e restauro dos dados reais; a antiga fica intacta): conferir movimentos, categorias, regras e saldo após a migração 0006, o assistente «Adicionar conta» com um extrato real de outro banco e o aspeto em modo escuro e na página «Sobre».
-2. Confirmar o autor/ano/texto em `frontend/src/lib/about.ts` («João Barreto» foi deduzido do GitHub).
+2. Confirmar o autor/ano/texto em `frontend/src/lib/about.ts` (autor e titular da licença MIT em `LICENSE`).
 3. Ideias propostas, à espera de decisão do utilizador: notas por linha (campo `notas` já existe na BD/API, falta UI); vista «agrupar por descrição dentro de uma categoria».
 4. Backup (pg_dump agendado + cópia fora da máquina): só quando a release estiver estável; o utilizador perguntou onde guardar as cópias.
 5. Segundo utilizador e outros bancos: criar o utilizador (`create-user`) e usar o assistente «Adicionar conta» com o extrato real (o parser genérico deteta e o utilizador confirma); só se o detetor falhar é que se escreve um parser dedicado (`docs/novo-banco.md`). Extratos sem coluna de saldo NÃO são suportados (decisão: os extratos anuais e mensais têm sempre saldo).
@@ -45,8 +45,8 @@ Regras de trabalho: nunca fazer commit de dados reais; nunca `docker compose dow
 - `make test` — pytest em `backend/` (usa `backend/.venv`; a máquina é Fedora atómica com Podman, sem docker; `podman-compose` está em `backend/.venv/bin`, usar `make up COMPOSE="podman compose"` com esse bin no PATH).
 - `make test-db` — corre toda a suite, incluindo testes com BD, contra um Postgres descartável (`TEST_DATABASE_URL`); `make test` salta os testes com BD.
 - `make lint` — ruff.
-- `make install` / `scripts/install.sh` — instalador interativo (ver README); `make reset-data USERNAME=joao` repõe os movimentos de um utilizador.
-- `make create-user USERNAME=joao NOME="João"` — cria o utilizador dentro do contentor (pede a password).
+- `make install` / `scripts/install.sh` — instalador interativo (ver README); `make reset-data USERNAME=ana` repõe os movimentos de um utilizador.
+- `make create-user USERNAME=ana NOME="Ana"` — cria o utilizador dentro do contentor (pede a password).
 - Migração: `cd backend && DATABASE_URL=postgresql+psycopg://... .venv/bin/alembic upgrade head`. Testada contra `docker.io/library/postgres:16` via `podman run`.
 - Testes: CSV sintético gerado em `backend/tests/conftest.py` (sem dados pessoais; constantes escritas à mão). Exports reais ficam em `backend/tests/fixtures/local/` (ignorado pelo git; `test_local_real.py` verifica a reconciliação se existirem). **Nunca fazer commit de `dados.csv` nem de extratos reais.**
 

@@ -2,7 +2,9 @@
 
 WebApp self-hosted (Docker Compose) para importar extratos bancários (Bankinter com parser dedicado; qualquer outro banco com extrato tabular e coluna de saldo), reconciliar saldos, categorizar movimentos com regras locais e ver um dashboard (receitas, despesas, poupança, reserva, investido). Todos os dados ficam na máquina do utilizador, sem APIs externas.
 
-Especificação completa: [PersonalFinances.md](PersonalFinances.md). Notas de trabalho para desenvolvimento: [CLAUDE.md](CLAUDE.md).
+Especificação completa: [PersonalFinances.md](PersonalFinances.md). Notas de trabalho para desenvolvimento: [CLAUDE.md](CLAUDE.md). Segurança: [SECURITY.md](SECURITY.md). Licença: [MIT](LICENSE).
+
+> **Aviso:** projeto pessoal, sem qualquer ligação a bancos ou instituições financeiras (os nomes de bancos são só descritivos). Não é aconselhamento financeiro e é fornecido «tal como está», sem garantias: confira sempre os valores com o banco.
 
 ## O que faz
 
@@ -35,7 +37,7 @@ O instalador faz as perguntas necessárias (com valores por omissão sensatos), 
 
 É seguro repetir: reconhece uma instância existente, atualiza-a e mantém os dados. Recusa restaurar por cima de dados e nunca usa `down -v`.
 
-Manualmente, o mesmo faz-se assim: `cp .env.example .env` (pôr uma `POSTGRES_PASSWORD` forte), `docker compose up -d --build` e `make create-user USERNAME=joao NOME="João"`. Abra `http://127.0.0.1:8080` (porta `FRONTEND_PORT`), importe o extrato em «Importar» e categorize em «Por categorizar».
+Manualmente, o mesmo faz-se assim: `cp .env.example .env` (pôr uma `POSTGRES_PASSWORD` forte), `docker compose up -d --build` e `make create-user USERNAME=ana NOME="Ana"`. Abra `http://127.0.0.1:8080` (porta `FRONTEND_PORT`), importe o extrato em «Importar» e categorize em «Por categorizar».
 
 ### Acesso remoto (recomendado): Tailscale
 
@@ -81,7 +83,7 @@ Opcionais, só no backend: `DATABASE_URL` (substitui as variáveis `POSTGRES_*`)
 
 - **Atualizar**: `git pull && docker compose up -d --build`. As migrações correm no arranque do backend; os dados mantêm-se no volume `pgdata`.
 - **Nunca** correr `docker compose down -v`: apaga o volume `pgdata` e todos os dados. `docker compose down` (sem `-v`) é seguro.
-- **Repor movimentos** de UM utilizador (apaga os seus movimentos e importações, mantém categorias, regras, contas e utilizadores; as categorizações manuais voltam a aplicar-se ao reimportar): `make reset-data USERNAME=joao`.
+- **Repor movimentos** de UM utilizador (apaga os seus movimentos e importações, mantém categorias, regras, contas e utilizadores; as categorizações manuais voltam a aplicar-se ao reimportar): `make reset-data USERNAME=ana`.
 - **Backup**: ainda não está automatizado (o `scripts/install.sh` consegue fazer um backup pontual de uma instância). Por agora, copie a base de dados à mão e guarde a cópia fora da máquina:
   ```bash
   docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup-$(date +%F).sql
