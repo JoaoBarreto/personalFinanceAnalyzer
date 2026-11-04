@@ -35,7 +35,7 @@ O instalador faz as perguntas necessárias (com valores por omissão sensatos), 
 - **publicar por HTTPS** com `tailscale serve` numa porta própria e **expor na rede local** (opcional);
 - correr **sem perguntas** (`--yes` e flags, ver `scripts/install.sh --help`).
 
-É seguro repetir: reconhece uma instância existente, atualiza-a e mantém os dados. Recusa restaurar por cima de dados e nunca usa `down -v`.
+É seguro repetir: reconhece uma instância existente **da mesma pasta**, atualiza-a (pedindo confirmação) e mantém os dados. **Recusa mexer num projeto Compose que pertence a outra pasta** (por exemplo, a versão antiga), recusa restaurar por cima de dados e nunca usa `down -v`.
 
 Manualmente, o mesmo faz-se assim: `cp .env.example .env` (pôr uma `POSTGRES_PASSWORD` forte), `docker compose up -d --build` e `make create-user USERNAME=ana NOME="Ana"`. Abra `http://127.0.0.1:8080` (porta `FRONTEND_PORT`), importe o extrato em «Importar» e categorize em «Por categorizar».
 

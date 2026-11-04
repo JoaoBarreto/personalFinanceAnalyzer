@@ -103,9 +103,18 @@ DEF_PROJECT="$(env_get COMPOSE_PROJECT_NAME)"; DEF_PROJECT="${DEF_PROJECT:-$(bas
 [[ "$PROJECT" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "Nome de projeto inválido (use minúsculas, números, - e _)."
 
 EXISTING=0
-if [[ -n "$(compose -p "$PROJECT" ps -q 2>/dev/null || true)" ]]; then
+EXISTING_IDS="$(compose -p "$PROJECT" ps -q 2>/dev/null || true)"
+if [[ -n "$EXISTING_IDS" ]]; then
   EXISTING=1
-  warn "O projeto «$PROJECT» já tem contentores: vou ATUALIZAR esta instância (os dados mantêm-se no volume)."
+  # Segurança: um projeto com este nome que pertence a OUTRA pasta é outra instalação (p.ex. a versão antiga).
+  # Atualizá-lo daqui recriava os contentores dela com este código. Recusa-se sempre.
+  ENGINE="${COMPOSE[0]}"; [[ "$ENGINE" == podman-compose ]] && ENGINE=podman
+  WD="$("$ENGINE" inspect --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$(printf '%s\n' "$EXISTING_IDS" | head -n1)" 2>/dev/null || true)"
+  if [[ -n "$WD" && "$WD" != "$ROOT" ]]; then
+    die "O projeto «$PROJECT» já existe e pertence a OUTRA pasta ($WD). Para não lhe mexer, escolha outro nome de projeto (--project) e corra o instalador numa pasta própria."
+  fi
+  warn "O projeto «$PROJECT» já tem contentores nesta pasta: vou ATUALIZAR esta instância (os dados mantêm-se no volume)."
+  ask_yn "Continuar e atualizar esta instância?" n || die "Cancelado. Nada foi alterado."
 fi
 
 if [[ -z "$PORT" ]]; then
