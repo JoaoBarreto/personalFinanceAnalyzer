@@ -92,6 +92,9 @@ export default function Dashboard() {
     nav(`/movimentos?${q}`, { state: { from: "dashboard" } });
   };
   const anterior = modo === "ano" ? "ano anterior" : "mês anterior";
+  // O saldo é o do último movimento até ao fim do período: se o período ainda não acabou (ou os dados
+  // terminam antes), mostrar a data real dos dados em vez de 31/12 ou do fim do mês.
+  const dataSaldo = s && ultimo && ultimo < s.periodo.data_ate && ultimo >= s.periodo.data_de ? ultimo : s?.periodo.data_ate ?? "";
   const periodo = modo === "ano" ? `todo o ano de ${ym} (1 jan – 31 dez)` : `o mês de ${ym ? mesPt(ym) : "…"}`;
   const noPeriodo = modo === "ano" ? `em ${periodo}` : `n${periodo}`; // «em todo o ano…» / «no mês de…»
   const doPeriodo = modo === "ano" ? `de ${periodo}` : `d${periodo}`; // «de todo o ano…» / «do mês de…»
@@ -113,7 +116,7 @@ export default function Dashboard() {
           <button onClick={() => step(1)} aria-label={modo === "ano" ? "Ano seguinte" : "Mês seguinte"} disabled={!ym}>›</button>
         </div>
         <TitularSelect value={titular} onChange={setTitular} />
-        <label className="check"><input type="checkbox" checked={transf} onChange={(e) => setTransf(e.target.checked)} /> Incluir transferências</label>
+        <label className="check"><input type="checkbox" checked={transf} onChange={(e) => setTransf(e.target.checked)} /> Incluir transferências<InfoTip title="Transferências e poupança/investimento"><p>São movimentos de dinheiro que <strong style={{ display: "inline" }}>não são gasto nem ganho</strong>: o dinheiro só sai da conta à ordem. Inclui as transferências entre contas suas e o dinheiro <strong style={{ display: "inline" }}>poupado ou investido</strong> fora da conta (corretora como a Interactive Brokers, depósitos a prazo, certificados...). Entram aqui as categorias do tipo transferência: «Transferências entre contas» e «Poupança/Investimento».</p><p><strong style={{ display: "inline" }}>Desligado (recomendado):</strong> ficam fora de receitas e despesas, por isso a taxa de poupança mede o que realmente poupa, incluindo o que enviou para investir.</p><p><strong style={{ display: "inline" }}>Ligado:</strong> o que sai passa a contar como despesa e o que entra como receita, e a taxa de poupança desce porque o dinheiro poupado deixa de contar como poupado. Serve para ver todos os movimentos de dinheiro, não para medir a poupança.</p></InfoTip></label>
         {s && s.n_por_categorizar > 0 && <Link className="badge warn" to="/rever">{s.n_por_categorizar} por categorizar</Link>}
       </div>
       <CoverageBanner />
@@ -124,11 +127,13 @@ export default function Dashboard() {
             <div className="hero">
               <span className="kpi-label">Saldo da conta<InfoTip title="Saldo da conta"><p>Dinheiro que tem na conta no <strong style={{ display: "inline" }}>fim do período</strong>, lido da coluna «Saldo» do último movimento até essa data.</p><p>Não depende das categorias nem do filtro «Incluir transferências».</p></InfoTip></span>
               <span className="hero-value">{eur(s.saldo.fim)}</span>
-              <span className="kpi-sub">em {dataPt(s.periodo.data_ate)}</span>
+              <span className="kpi-sub">em {dataPt(dataSaldo)}</span>
             </div>
             <div className="tile">
-              <span className="kpi-label">Poupança do período<InfoTip title="Poupança do período"><p>Receitas menos despesas {doPeriodo}, sem as transferências.</p><p>Taxa de poupança = poupança ÷ receitas.</p></InfoTip></span><span className="tile-value">{eur(s.poupanca)}</span>
+              <span className="kpi-label">Poupança do período<InfoTip title="Poupança do período"><p>Receitas menos despesas {doPeriodo}, sem as transferências.</p><p>Taxa de poupança = poupança ÷ receitas.</p><p>O dinheiro que enviou para poupança/investimento (ex.: Interactive Brokers, depósitos a prazo) conta como poupado: só não é poupança se ligar «Incluir transferências», porque aí passa a contar como despesa.</p></InfoTip></span><span className="tile-value">{eur(s.poupanca)}</span>
               <span className="kpi-sub small">Taxa de poupança {pct(s.taxa_poupanca_pct)}</span>
+              {transf ? <span className="kpi-sub small warn-text">Inclui transferências como receita/despesa: a taxa não mede a poupança real.</span>
+                : Number(s.saldo.transferencias) < 0 && <span className="kpi-sub small">Dos quais {eur(String(-Number(s.saldo.transferencias)))} saíram da conta para poupança/investimento ou outras transferências.</span>}
             </div>
             <div className="tile">
               <span className="kpi-label">Receitas<InfoTip title="Receitas"><p>Soma dos movimentos de entrada (valor positivo) {doPeriodo}, sem as transferências.</p><p>A variação compara com o {anterior}: (atual − anterior) ÷ anterior.</p></InfoTip></span><span className="tile-value">{eur(s.receitas)}</span>
@@ -142,13 +147,13 @@ export default function Dashboard() {
           </section>
           {s.saldo.inicio !== null && (
             <section className="card bridge" aria-label="Do saldo inicial ao final">
-              <h2>Do saldo inicial ao final<InfoTip title="Do saldo inicial ao final"><p>Saldo inicial + receitas − despesas ± transferências = saldo final.</p><p>As transferências ficam fora de receitas e despesas, por isso aparecem à parte. Se as contas não fecharem, faltam movimentos: veja o aviso de cobertura.</p></InfoTip></h2>
+              <h2>Do saldo inicial ao final<InfoTip title="Do saldo inicial ao final"><p>Saldo inicial + receitas − despesas ± transferências = saldo final.</p><p>Transferências são movimentos entre as suas contas e o dinheiro poupado ou investido fora da conta (corretora, depósitos a prazo...): não são gasto nem ganho. Ficam fora de receitas e despesas, por isso aparecem à parte. Se as contas não fecharem, faltam movimentos: veja o aviso de cobertura.</p></InfoTip></h2>
               <dl>
                 <dt>{primeiro && primeiro > s.periodo.data_de ? `Saldo antes do 1.º movimento (${dataPt(primeiro)})` : `Saldo inicial (${dataPt(s.periodo.data_de)})`}</dt><dd>{eur(s.saldo.inicio)}</dd>
                 <dt>+ Receitas</dt><dd>{eur(s.receitas)}</dd>
                 <dt>− Despesas</dt><dd>{eur(s.despesas)}</dd>
                 {s.saldo.transferencias !== "0.00" && <><dt>± Transferências (fora dos totais)</dt><dd>{eur(s.saldo.transferencias)}</dd></>}
-                <dt className="strong">= Saldo final ({dataPt(s.periodo.data_ate)})</dt><dd className="strong">{eur(s.saldo.fim)}</dd>
+                <dt className="strong">= Saldo final ({dataPt(dataSaldo)})</dt><dd className="strong">{eur(s.saldo.fim)}</dd>
               </dl>
               {s.saldo.reconcilia === true && <p className="ok small">✓ As contas fecham ao cêntimo.</p>}
               {s.saldo.reconcilia === false && <p className="warn-text small">✗ Não fecha (diferença {eur(s.saldo.diferenca)}): provavelmente faltam movimentos. Veja o aviso de cobertura acima ou importe o período em falta.</p>}
