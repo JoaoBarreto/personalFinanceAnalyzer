@@ -20,6 +20,7 @@ Esta especificação descreve o desenho inicial. O que está implementado diverg
 | Dashboard (3.9) | Receitas, despesas, poupança, categorias, evolução | Acrescenta **reserva (meses)**, **taxa de poupança acumulada e média de 6 meses**, **investido/poupado fora da conta**, escala do eixo Y com marcas redondas e o mês em curso fora das taxas e da poupança mensal. |
 | Bancos (3.3, decisão 1) | Só Bankinter no MVP; novos bancos = novo parser | **Qualquer banco** com extrato tabular (.xls, .xlsx, .csv) **com coluna de saldo**: o assistente «Adicionar conta» deteta o formato, verifica-o pela cadeia de saldos e pede confirmação ao utilizador (parser genérico por modelo guardado em `contas.config_importacao`). O Bankinter mantém o parser dedicado. PDF continua fora. |
 | Formato de importação (3.2) | CSV/XLSX | O `.xls` original do Bankinter é o formato principal; o `.xlsx` só é aceite no parser genérico. |
+| Criação de utilizadores | Criados pelo administrador na CLI | **Registo no ecrã de login** (o primeiro utilizador sempre; depois `ALLOW_REGISTRATION`, com limite por IP). `make create-user` continua como ferramenta de administração. |
 | Instalação (secção 6) | `docker compose up` manual | `scripts/install.sh` interativo (instalação ao lado de outra instância, backup/restauro, tailscale opcional). |
 
 ---

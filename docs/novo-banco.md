@@ -39,12 +39,12 @@ Só faz falta para extratos que o parser genérico não consegue ler (PDF, vári
 4. **Implementar** em `backend/app/parsers/banks/<banco>/`: um parser com `can_parse` e `parse` (contrato em `parsers/base.py`), reutilizando a reconciliação por cadeia de saldos (`parsers/reconcile.py`). Dinheiro sempre em `Decimal` a partir do texto ou de cêntimos inteiros, nunca de float. Registar o `parser_id` em `parsers/registry.py` (`PARSERS` e a lista `BANKS`, que alimenta o assistente).
 5. **Testes sintéticos**: um gerador de ficheiros no `conftest.py` (como `build_csv`/`build_xls`) com valores escritos à mão e variantes inválidas de propósito (data errada, casas decimais a mais, coluna renomeada, outra folha). Os testes recusam desvios e aceitam o modelo exato. Nunca usar o ficheiro real nos testes versionados.
 6. **Validar no ficheiro real**: o utilizador corre `check_statement.py <banco> ficheiro` e cola o resultado. Se for recusado, ajusta-se pela mensagem agregada, sem relaxar a regra.
-7. **Conta**: criar o utilizador (`make create-user`) se ainda não existir, depois a conta em «Contas» com o banco certo. Importar, rever o preview (avisos de continuidade e duplicados) e confirmar.
+7. **Conta**: registar o utilizador no ecrã de login se ainda não existir, depois a conta em «Contas» com o banco certo. Importar, rever o preview (avisos de continuidade e duplicados) e confirmar.
 8. **Conferir**: o saldo da conta tem de bater com o banco, e o aviso de cobertura não pode mostrar buracos. Só depois categorizar.
 9. **Commit**: apenas código, testes sintéticos e esta documentação. Nada de ficheiros reais, capturas com dados reais ou a saída mascarada completa se tiver informação identificável.
 
 ## Outros utilizadores
 
-- Qualquer utilizador novo é igual aos outros: o administrador cria-o (`make create-user`), ele entra e cria as suas contas e importa os seus extratos. Nada é partilhado: cada utilizador só vê as suas contas, movimentos, regras e categorias (recebe a sua cópia das categorias iniciais).
+- Qualquer utilizador novo é igual aos outros: regista-se no ecrã de login (ou o administrador cria-o com `make create-user`), cria as suas contas e importa os seus extratos. Nada é partilhado: cada utilizador só vê as suas contas, movimentos, regras e categorias (recebe a sua cópia das categorias iniciais).
 - Cada conta pertence a um banco (`banco`) e a um parser; a deduplicação é por conta. Um banco novo, depois de ter parser, fica disponível para todos os utilizadores.
 - O isolamento é feito pela aplicação; quem administra o servidor tem acesso à base de dados.

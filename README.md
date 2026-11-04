@@ -12,7 +12,7 @@ Especificação completa: [PersonalFinances.md](PersonalFinances.md). Notas de t
 - **Reconciliar** pela cadeia de saldos do ficheiro, avisar de buracos entre extratos e evitar duplicados quando os períodos se sobrepõem.
 - **Categorizar**: regras (contém, começa por, igual, regex), histórico e categorização em lote por comerciante. As escolhas manuais nunca são sobrescritas e sobrevivem a reimportações.
 - **Dashboard**: receitas, despesas, poupança, taxa de poupança, reserva (meses), dinheiro investido/poupado fora da conta, evolução mensal, despesas por categoria.
-- **Multiutilizador com isolamento**: cada utilizador só vê as suas contas, movimentos, regras e categorias (cada um recebe a sua cópia das categorias iniciais). Sessões no servidor, CSRF e limite de tentativas de login. O isolamento é na aplicação: quem administra o servidor tem acesso à base de dados.
+- **Multiutilizador com isolamento**: cada pessoa regista-se no ecrã de login e só vê as suas contas, movimentos, regras e categorias (cada um recebe a sua cópia das categorias iniciais). Sessões no servidor, CSRF e limite de tentativas de login. O isolamento é na aplicação: quem administra o servidor tem acesso à base de dados.
 
 ## Stack
 
@@ -28,16 +28,16 @@ cd personalFinanceAnalyzer
 scripts/install.sh
 ```
 
-O instalador faz as perguntas necessárias (com valores por omissão sensatos), escreve o `.env` (modo 600, password da base de dados gerada), arranca a aplicação, espera que responda e cria o primeiro utilizador. Também sabe, se quiser:
+O instalador faz as perguntas necessárias (com valores por omissão sensatos), escreve o `.env` (modo 600, password da base de dados gerada), arranca a aplicação e espera que responda. **Os utilizadores não se criam no instalador**: abra o endereço que ele mostra e crie a sua conta no ecrã de login (o primeiro utilizador pode sempre registar-se). Pergunta-lhe se deixa o registo ligado para quem vier depois. Também sabe, se quiser:
 
 - **instalar ao lado de uma instância existente** (outra pasta, outro nome de projeto e outra porta) sem lhe tocar, por exemplo para testar uma versão nova;
 - **copiar os dados** de uma instância antiga: faz um backup só de leitura e restaura-o na instalação nova antes de o backend arrancar (o utilizador e o nome da base de dados têm de coincidir);
-- **publicar por HTTPS** com `tailscale serve` numa porta própria e **expor na rede local** (opcional);
+- **publicar por HTTPS** com `tailscale serve` numa porta própria e **expor na rede local** (opcional; as perguntas vêm antes de arrancar);
 - correr **sem perguntas** (`--yes` e flags, ver `scripts/install.sh --help`).
 
 É seguro repetir: reconhece uma instância existente **da mesma pasta**, atualiza-a (pedindo confirmação) e mantém os dados. **Recusa mexer num projeto Compose que pertence a outra pasta** (por exemplo, a versão antiga), recusa restaurar por cima de dados e nunca usa `down -v`.
 
-Manualmente, o mesmo faz-se assim: `cp .env.example .env` (pôr uma `POSTGRES_PASSWORD` forte), `docker compose up -d --build` e `make create-user USERNAME=ana NOME="Ana"`. Abra `http://127.0.0.1:8080` (porta `FRONTEND_PORT`), importe o extrato em «Importar» e categorize em «Por categorizar».
+Manualmente, o mesmo faz-se assim: `cp .env.example .env` (pôr uma `POSTGRES_PASSWORD` forte), `docker compose up -d --build`. Abra `http://127.0.0.1:8080` (porta `FRONTEND_PORT`), crie a sua conta no ecrã de login (em alternativa, o administrador cria contas com `make create-user USERNAME=ana NOME="Ana"`), importe o extrato em «Importar» e categorize em «Por categorizar».
 
 ### Acesso remoto (recomendado): Tailscale
 
@@ -67,11 +67,12 @@ Em http o cookie não pode ser `Secure`: com `COOKIE_SECURE=auto` isto trata-se 
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | `pfa`, `pfa`, `change-me` | Base de dados. **Mudar a password.** |
 | `COOKIE_SECURE` | `auto` | `auto`: Secure só por HTTPS; `true`/`false` forçam. |
 | `TRUSTED_PROXIES` | vazio | IPs de proxies de confiança para ler `X-Forwarded-For`. |
+| `ALLOW_REGISTRATION` | `true` | Registo de utilizadores novos no ecrã de login. O primeiro utilizador pode sempre registar-se; depois, `true` deixa qualquer pessoa que chegue à app criar conta (só vê os seus dados) e `false` só deixa o administrador criar (`make create-user`). |
 | `FRONTEND_PORT` | `8080` | Porta no host (só em 127.0.0.1) do nginx. |
 | `COMPOSE_PROJECT_NAME` | nome da pasta | Isola contentores e volumes: é o que permite duas instâncias lado a lado (cada uma na sua pasta). Escrito pelo `scripts/install.sh`. |
 | `LAN_BIND_IP` | vazio | IP da LAN, só com `docker-compose.lan.yml`. |
 
-Opcionais, só no backend: `DATABASE_URL` (substitui as variáveis `POSTGRES_*`), `ENABLE_DOCS=true` (liga `/docs` e `/openapi.json`, desligados por omissão), `SESSION_TTL_DAYS` (14), `LOGIN_MAX_FAILURES` (5) e `LOGIN_WINDOW_SECONDS` (300).
+Opcionais, só no backend: `REGISTER_MAX` (20) e `REGISTER_WINDOW_SECONDS` (3600), o limite de tentativas de registo por IP; `DATABASE_URL` (substitui as variáveis `POSTGRES_*`), `ENABLE_DOCS=true` (liga `/docs` e `/openapi.json`, desligados por omissão), `SESSION_TTL_DAYS` (14), `LOGIN_MAX_FAILURES` (5) e `LOGIN_WINDOW_SECONDS` (300).
 
 ## Versões e atualização
 

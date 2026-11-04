@@ -2,9 +2,13 @@
 # Instalador interativo das Finanças Pessoais (Docker ou Podman Compose).
 #
 # Corre a partir da pasta do repositório. Faz perguntas com valores por omissão sensatos, escreve o .env (modo 600),
-# arranca a aplicação, espera que responda e, se quiser, cria o primeiro utilizador, restaura um backup e configura
-# o tailscale serve. Seguro de repetir: nunca apaga volumes (não usa `down -v`) e pede confirmação antes de
-# qualquer passo que altere dados.
+# arranca a aplicação, espera que responda e, se quiser, restaura um backup e configura o tailscale serve.
+#
+# Os utilizadores NÃO se criam aqui: cada pessoa regista-se no ecrã de login da aplicação (o primeiro utilizador
+# pode sempre; para os seguintes ver ALLOW_REGISTRATION). `make create-user` fica como ferramenta de administração.
+#
+# Seguro de repetir: nunca apaga volumes (não usa `down -v`) e pede confirmação antes de qualquer passo que altere
+# dados.
 #
 # Cada instância precisa da SUA pasta (o .env é por pasta): para testar uma versão nova ao lado da atual, clone o
 # repositório noutra pasta e corra este script lá, com outro nome de projeto e outra porta.
@@ -19,7 +23,7 @@
 #   --backup-from DIR     faz pg_dump da instância antiga que corre em DIR (só leitura) antes de instalar
 #   --backup-project N    nome do projeto Compose da instância antiga (omissão: nome da pasta DIR)
 #   --restore FICHEIRO    restaura um pg_dump na base de dados NOVA (tem de estar vazia), antes do backend arrancar
-#   --create-user NOME    cria o utilizador NOME (password em PFA_USER_PASSWORD, ou pedida)
+#   --registration true|false   permite (ou não) que quem aceda ao ecrã de login crie conta (omissão: true)
 #   --tailscale-port N    corre `tailscale serve --https=N` para esta instância (nunca a 443 sem confirmar)
 #   -h, --help
 set -euo pipefail
@@ -36,9 +40,9 @@ die()  { printf '%s\n' "${R}✗ $*${N}" >&2; exit 1; }
 
 YES=0
 PROJECT="" PORT="" PG_USER="" PG_DB="" PG_PASSWORD="${PFA_PG_PASSWORD:-}" COOKIE="" LAN_IP=""
-BACKUP_FROM="" BACKUP_PROJECT="" RESTORE="" CREATE_USER="" TS_PORT=""
+BACKUP_FROM="" BACKUP_PROJECT="" RESTORE="" TS_PORT="" REGISTRATION=""
 
-usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,7 +57,7 @@ while [[ $# -gt 0 ]]; do
     --backup-from) BACKUP_FROM="$2"; shift ;;
     --backup-project) BACKUP_PROJECT="$2"; shift ;;
     --restore) RESTORE="$2"; shift ;;
-    --create-user) CREATE_USER="$2"; shift ;;
+    --registration) REGISTRATION="$2"; shift ;;
     --tailscale-port) TS_PORT="$2"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Opção desconhecida: $1 (use --help)" ;;
@@ -148,6 +152,32 @@ if [[ -z "$LAN_IP" && $YES -eq 0 ]]; then
   fi
 fi
 
+# Registo de novos utilizadores pelo ecrã de login (o primeiro utilizador pode sempre registar-se)
+if [[ -z "$REGISTRATION" ]]; then
+  DEF_REG="$(env_get ALLOW_REGISTRATION)"; DEF_REG="${DEF_REG:-true}"
+  if [[ $YES -eq 0 ]]; then
+    echo "  O primeiro utilizador regista-se sempre no ecrã de login. Depois disso, quem chegar à aplicação"
+    echo "  pode criar conta (cada pessoa só vê os seus dados) se deixar o registo ligado."
+    [[ -n "$LAN_IP" ]] && warn "Com acesso na rede local, qualquer pessoa dessa rede poderia criar uma conta."
+    if ask_yn "Deixar o registo de novos utilizadores ligado?" "$([[ "$DEF_REG" == true ]] && echo s || echo n)"; then REGISTRATION=true; else REGISTRATION=false; fi
+  else
+    REGISTRATION="$DEF_REG"
+  fi
+fi
+[[ "$REGISTRATION" =~ ^(true|false)$ ]] || die "--registration deve ser true ou false."
+
+# Tailscale (a pergunta é aqui, antes de arrancar; o comando só corre no fim, com a aplicação a responder)
+if [[ -z "$TS_PORT" && $YES -eq 0 ]] && command -v tailscale >/dev/null 2>&1; then
+  if ask_yn "Publicar por HTTPS com o tailscale serve?" n; then
+    ask "Porta HTTPS do tailscale (NÃO use 443 se já a usa para outra instância)" "8443"; TS_PORT="$REPLY"
+  fi
+fi
+if [[ -n "$TS_PORT" ]]; then
+  command -v tailscale >/dev/null 2>&1 || die "O tailscale não está instalado."
+  [[ "$TS_PORT" =~ ^[0-9]+$ ]] || die "Porta do tailscale inválida: $TS_PORT"
+  if [[ "$TS_PORT" == 443 ]] && ! ask_yn "A porta 443 pode estar a servir outra instância. Substituir mesmo?" n; then die "Cancelado (tailscale)."; fi
+fi
+
 # ---------- backup da instância antiga (opcional, só leitura) ----------
 if [[ -z "$BACKUP_FROM" && $YES -eq 0 && $EXISTING -eq 0 ]]; then
   if ask_yn "Quer copiar os dados de uma instância antiga que está a correr (faz um backup só de leitura)?" n; then
@@ -184,6 +214,7 @@ if [[ -f .env ]]; then cp -p .env ".env.bak.$(date +%Y%m%d-%H%M%S)"; fi
     echo "POSTGRES_USER=$PG_USER"
     echo "POSTGRES_PASSWORD=$PG_PASSWORD"
     echo "COOKIE_SECURE=$COOKIE"
+    echo "ALLOW_REGISTRATION=$REGISTRATION"
     echo "TRUSTED_PROXIES=$(env_get TRUSTED_PROXIES)"
     echo "FRONTEND_PORT=$PORT"
     echo "LAN_BIND_IP=$LAN_IP"
@@ -218,32 +249,8 @@ done
 [[ $up -eq 1 ]] || { compose logs --tail 30 backend || true; die "A aplicação não respondeu a tempo (logs acima)."; }
 ok "A aplicação está a responder."
 
-# ---------- primeiro utilizador ----------
-if [[ -z "$CREATE_USER" && $YES -eq 0 ]]; then
-  if ask_yn "Criar um utilizador agora?" s; then ask "Nome de utilizador (login)" ""; CREATE_USER="$REPLY"; fi
-fi
-if [[ -n "$CREATE_USER" ]]; then
-  UPW="${PFA_USER_PASSWORD:-}"
-  while [[ -z "$UPW" ]]; do
-    ask_secret "Password para $CREATE_USER (mín. 10 caracteres)"; UPW="$REPLY"
-    [[ $YES -eq 0 ]] || die "Defina PFA_USER_PASSWORD para criar o utilizador sem interação."
-    ask_secret "Repita a password"; [[ "$REPLY" == "$UPW" ]] || { warn "Não coincidem."; UPW=""; continue; }
-    (( ${#UPW} >= 10 )) || { warn "Mínimo 10 caracteres."; UPW=""; }
-  done
-  ask "Nome a mostrar" "$CREATE_USER"; DISPLAY_NAME="$REPLY"
-  printf '%s\n' "$UPW" | compose exec -T backend python -m app.cli create-user "$CREATE_USER" --nome "$DISPLAY_NAME" --password-stdin \
-    && ok "Utilizador «$CREATE_USER» criado." || warn "Não criei o utilizador (já existe?)."
-fi
-
-# ---------- tailscale (opcional) ----------
-if [[ -z "$TS_PORT" && $YES -eq 0 ]] && command -v tailscale >/dev/null 2>&1; then
-  if ask_yn "Publicar por HTTPS com o tailscale serve?" n; then
-    ask "Porta HTTPS do tailscale (NÃO use 443 se já a usa para outra instância)" "8443"; TS_PORT="$REPLY"
-  fi
-fi
+# ---------- tailscale (só corre agora que a aplicação responde) ----------
 if [[ -n "$TS_PORT" ]]; then
-  command -v tailscale >/dev/null 2>&1 || die "O tailscale não está instalado."
-  if [[ "$TS_PORT" == 443 ]] && ! ask_yn "A porta 443 pode estar a servir outra instância. Substituir mesmo?" n; then die "Cancelado (tailscale)."; fi
   say "tailscale serve --bg --https=$TS_PORT $URL"
   tailscale serve --bg --https="$TS_PORT" "$URL" && ok "Publicado. Veja o endereço com «tailscale serve status»." \
     || warn "O tailscale serve falhou (a sintaxe muda entre versões): veja «tailscale serve --help»."
@@ -257,6 +264,7 @@ ${B}Pronto.${N}
   Projeto Compose: $PROJECT   (nesta pasta basta «${COMPOSE[*]} ...», o nome está no .env)
   Atualizar:       git pull && ${COMPOSE[*]} up -d --build
   Logs:            ${COMPOSE[*]} logs -f backend
-  Criar utilizador: make create-user USERNAME=nome NOME="Nome"
+  Primeiro passo:  abra o endereço e crie a sua conta no ecrã de login
+  Registo de novos utilizadores: ${REGISTRATION} (ALLOW_REGISTRATION no .env; o administrador cria contas com «make create-user USERNAME=nome NOME=Nome»)
   ${Y}Nunca use «down -v»: apaga a base de dados.${N}
 EOF

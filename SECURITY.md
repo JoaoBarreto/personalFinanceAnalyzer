@@ -8,6 +8,7 @@ Se encontrar uma falha de segurança (por exemplo, um utilizador conseguir ver d
 
 - Login com palavra-passe (argon2), sessões no servidor, proteção CSRF e limite de tentativas de login.
 - **Isolamento por utilizador na aplicação**: cada utilizador só vê as suas contas, movimentos, regras e categorias (`backend/tests/test_isolation.py`).
+- **Registo aberto:** o ecrã de login permite criar conta (`ALLOW_REGISTRATION=true` por omissão; o primeiro utilizador pode sempre registar-se). Cada conta só vê os seus dados, mas quem chegar à app consegue criá-la: se a expõe a uma rede onde nem todos devem ter conta (por exemplo, a rede local), ponha `ALLOW_REGISTRATION=false` depois de criar as contas necessárias e use `make create-user` para as seguintes. As tentativas de registo têm limite por IP.
 - Por omissão a app só escuta em `127.0.0.1`; para acesso remoto use HTTPS (por exemplo `tailscale serve`). Expor na rede local (`docker-compose.lan.yml`) é opcional e sem TLS: só em redes de confiança.
 - **Quem administra o servidor tem acesso à base de dados** e, por isso, a todos os dados. Não há cifragem por utilizador.
 - Os extratos importados e os backups contêm dados financeiros: guarde-os fora do repositório e do controlo de versões.
