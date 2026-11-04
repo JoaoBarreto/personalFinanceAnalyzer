@@ -119,8 +119,10 @@ fi
 [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT > 0 && PORT < 65536 )) || die "Porta inválida: $PORT"
 if [[ $EXISTING -eq 0 ]] && port_busy "$PORT"; then die "A porta $PORT já está ocupada. Escolha outra (--port)."; fi
 
-[[ -n "$PG_USER" ]] || { ask "Utilizador da base de dados" "$(env_get POSTGRES_USER)"; PG_USER="${REPLY:-pfa}"; }
-[[ -n "$PG_DB" ]]   || { ask "Nome da base de dados" "$(env_get POSTGRES_DB)"; PG_DB="${REPLY:-pfa}"; }
+DEF_PGUSER="$(env_get POSTGRES_USER)"; DEF_PGUSER="${DEF_PGUSER:-pfa}"
+DEF_PGDB="$(env_get POSTGRES_DB)"; DEF_PGDB="${DEF_PGDB:-pfa}"
+[[ -n "$PG_USER" ]] || { ask "Utilizador da base de dados" "$DEF_PGUSER"; PG_USER="$REPLY"; }
+[[ -n "$PG_DB" ]]   || { ask "Nome da base de dados" "$DEF_PGDB"; PG_DB="$REPLY"; }
 if [[ -z "$PG_PASSWORD" ]]; then
   PG_PASSWORD="$(env_get POSTGRES_PASSWORD)"
   if [[ -z "$PG_PASSWORD" || "$PG_PASSWORD" == change-me ]]; then
