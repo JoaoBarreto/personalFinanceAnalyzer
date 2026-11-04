@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Coverage } from "../api";
 import CategoryMatrix, { type Matrix } from "../components/CategoryMatrix";
@@ -11,7 +12,7 @@ import { dataPt, eur, mesPt, pct } from "../lib/format";
 type Summary = {
   periodo: { data_de: string; data_ate: string };
   despesas: string; receitas: string; poupanca: string; taxa_poupanca_pct: string | null;
-  saldo: { inicio: string | null; fim: string | null; transferencias: string; diferenca: string | null; reconcilia: boolean | null };
+  saldo: { inicio: string | null; fim: string | null; transferencias: string; transferencias_detalhe?: { nome: string; total: string }[]; diferenca: string | null; reconcilia: boolean | null };
   anterior: { variacao_despesas_pct: string | null; variacao_receitas_pct: string | null };
   media_6m: { variacao_despesas_pct: string | null };
   n_por_categorizar: number;
@@ -152,9 +153,10 @@ export default function Dashboard() {
                 <dt>{primeiro && primeiro > s.periodo.data_de ? `Saldo antes do 1.º movimento (${dataPt(primeiro)})` : `Saldo inicial (${dataPt(s.periodo.data_de)})`}</dt><dd>{eur(s.saldo.inicio)}</dd>
                 <dt>+ Receitas</dt><dd>{eur(s.receitas)}</dd>
                 <dt>− Despesas</dt><dd>{eur(s.despesas)}</dd>
-                {s.saldo.transferencias !== "0.00" && <><dt>± Transferências (fora dos totais)</dt><dd>{eur(s.saldo.transferencias)}</dd></>}
+                {s.saldo.transferencias !== "0.00" && (s.saldo.transferencias_detalhe ?? []).filter((d) => d.total !== "0.00").map((d) => <Fragment key={d.nome}><dt>± {d.nome} (fora dos totais)</dt><dd>{eur(d.total)}</dd></Fragment>)}
                 <dt className="strong">= Saldo final ({dataPt(dataSaldo)})</dt><dd className="strong">{eur(s.saldo.fim)}</dd>
               </dl>
+              {s.saldo.transferencias !== "0.00" && <p className="small muted">Transferências, poupança e investimento não são gasto nem ganho: é dinheiro que só muda de sítio. «Poupança/Investimento» é o que enviou para fora da conta (corretora como a Interactive Brokers, depósitos a prazo...), continua a ser seu e conta como poupado. «Transferências entre contas» são movimentos entre contas suas.</p>}
               {s.saldo.reconcilia === true && <p className="ok small">✓ As contas fecham ao cêntimo.</p>}
               {s.saldo.reconcilia === false && <p className="warn-text small">✗ Não fecha (diferença {eur(s.saldo.diferenca)}): provavelmente faltam movimentos. Veja o aviso de cobertura acima ou importe o período em falta.</p>}
             </section>

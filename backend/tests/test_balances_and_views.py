@@ -14,7 +14,7 @@ def test_saldo_da_conta_e_quadro_que_fecha(api, db):
     import_all(api)
     s = get(api, "summary", **PERIODO)
     assert s["saldo"] == {
-        "inicio": str(SALDO_INICIAL), "fim": str(SALDO_FINAL), "transferencias": "0.00",
+        "inicio": str(SALDO_INICIAL), "fim": str(SALDO_FINAL), "transferencias": "0.00", "transferencias_detalhe": [],
         "diferenca": "0.00", "reconcilia": True,
     }  # fmt: skip
     assert D(s["saldo"]["inicio"]) + D(s["receitas"]) - D(s["despesas"]) == D(s["saldo"]["fim"])
@@ -26,6 +26,7 @@ def test_quadro_fecha_com_transferencia_dentro_e_fora(api, db):
     api.patch(f"/api/transactions/{tid}", json={"categoria_id": cat_id(db, "Transferências entre contas")})
     fora = get(api, "summary", **PERIODO)
     assert fora["receitas"] == "900.00" and fora["saldo"]["transferencias"] == "2380.91"
+    assert fora["saldo"]["transferencias_detalhe"] == [{"nome": "Transferências entre contas", "total": "2380.91"}]
     assert fora["saldo"]["diferenca"] == "0.00" and fora["saldo"]["reconcilia"] is True
     dentro = get(api, "summary", incluir_transferencias=True, **PERIODO)
     assert (
@@ -49,7 +50,7 @@ def test_abertura_quando_a_conta_comeca_a_meio_do_periodo(api, db):
     assert antes["saldo"] == {
         "inicio": None,
         "fim": None,
-        "transferencias": "0.00",
+        "transferencias": "0.00", "transferencias_detalhe": [],
         "diferenca": None,
         "reconcilia": None,
     }

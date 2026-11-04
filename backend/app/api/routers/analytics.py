@@ -55,6 +55,19 @@ def _transfer_net(db: Session, scope, d0: date, d1: date) -> Decimal:
     return Decimal(db.scalar(q))
 
 
+def _transfer_detail(db: Session, scope, d0: date, d1: date) -> list[dict]:
+    """Transferências do período por categoria (com sinal), para o dashboard as separar."""
+    q = (
+        select(Categoria.nome, func.sum(Movimento.montante))
+        .select_from(Movimento)
+        .join(Categoria, Categoria.id == Movimento.categoria_id)
+        .where(Categoria.tipo == "transferencia", Movimento.data_movimento.between(d0, d1), *scope)
+        .group_by(Categoria.nome)
+        .order_by(Categoria.nome)
+    )
+    return [{"nome": n, "total": _s(Decimal(v))} for n, v in db.execute(q).all()]
+
+
 def _s(x: Decimal) -> str:
     return str(x.quantize(Decimal("0.01")))
 
@@ -145,6 +158,7 @@ def summary(
             "inicio": None if inicio is None else _s(inicio),
             "fim": None if fim is None else _s(fim),
             "transferencias": _s(transf),
+            "transferencias_detalhe": [] if incluir_transferencias else _transfer_detail(db, scope, d0, d1),
             "diferenca": None if diferenca is None else _s(diferenca),
             "reconcilia": None if diferenca is None else diferenca == 0,
         },
