@@ -45,7 +45,7 @@ Regras de trabalho: nunca fazer commit de dados reais; nunca `docker compose dow
 - `make test` — pytest em `backend/` (usa `backend/.venv`; a máquina é Fedora atómica com Podman, sem docker; `podman-compose` está em `backend/.venv/bin`, usar `make up COMPOSE="podman compose"` com esse bin no PATH).
 - `make test-db` — corre toda a suite, incluindo testes com BD, contra um Postgres descartável (`TEST_DATABASE_URL`); `make test` salta os testes com BD.
 - `make lint` — ruff.
-- `make install` / `scripts/install.sh` — instalador interativo (ver README); `make reset-data USERNAME=ana` repõe os movimentos de um utilizador.
+- `make install` / `scripts/install.sh` — instalador interativo (ver README); `make uninstall` / `scripts/uninstall.sh` — remove SÓ a instância da pasta (projeto Compose do `.env`; recusa projetos de outra pasta, remove contentores em várias passagens por causa das dependências e verifica no fim); `make reset-data USERNAME=ana` repõe os movimentos de um utilizador.
 - `make create-user USERNAME=ana NOME="Ana"` — cria o utilizador dentro do contentor (pede a password).
 - Migração: `cd backend && DATABASE_URL=postgresql+psycopg://... .venv/bin/alembic upgrade head`. Testada contra `docker.io/library/postgres:16` via `podman run`.
 - Testes: CSV sintético gerado em `backend/tests/conftest.py` (sem dados pessoais; constantes escritas à mão). Exports reais ficam em `backend/tests/fixtures/local/` (ignorado pelo git; `test_local_real.py` verifica a reconciliação se existirem). **Nunca fazer commit de `dados.csv` nem de extratos reais.**

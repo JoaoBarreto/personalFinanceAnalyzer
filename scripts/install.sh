@@ -13,6 +13,8 @@
 # Cada instância precisa da SUA pasta (o .env é por pasta): para testar uma versão nova ao lado da atual, clone o
 # repositório noutra pasta e corra este script lá, com outro nome de projeto e outra porta.
 #
+# Para remover uma instância (por exemplo, depois de um teste): scripts/uninstall.sh
+#
 # Uso:  scripts/install.sh [opções]        (sem opções: interativo)
 #   --yes                 aceita os valores por omissão e nunca pergunta (modo não interativo)
 #   --project NOME        nome do projeto Compose (isola contentores e volumes; omissão: nome da pasta)
@@ -215,6 +217,7 @@ if [[ -f .env ]]; then cp -p .env ".env.bak.$(date +%Y%m%d-%H%M%S)"; fi
     echo "POSTGRES_PASSWORD=$PG_PASSWORD"
     echo "COOKIE_SECURE=$COOKIE"
     echo "ALLOW_REGISTRATION=$REGISTRATION"
+    if [[ -n "$TS_PORT" ]]; then echo "TAILSCALE_HTTPS_PORT=$TS_PORT"; fi   # só informativo: o uninstall.sh usa-o para desfazer a publicação
     echo "TRUSTED_PROXIES=$(env_get TRUSTED_PROXIES)"
     echo "FRONTEND_PORT=$PORT"
     echo "LAN_BIND_IP=$LAN_IP"

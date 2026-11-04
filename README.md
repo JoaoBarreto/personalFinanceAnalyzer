@@ -83,6 +83,7 @@ Opcionais, só no backend: `REGISTER_MAX` (20) e `REGISTER_WINDOW_SECONDS` (3600
 ## Operação
 
 - **Atualizar**: `git pull && docker compose up -d --build`. As migrações correm no arranque do backend; os dados mantêm-se no volume `pgdata`.
+- **Remover uma instância** (por exemplo, para refazer um teste de instalação): na pasta dessa instância, `scripts/uninstall.sh` (ou `make uninstall`). Mostra o que vai remover (contentores, rede, volumes, imagens), pede que escreva o nome do projeto para confirmar e **só toca nesse projeto**: recusa se o projeto pertencer a outra pasta (por exemplo, a versão antiga). Opções: `--dry-run` (só mostra), `--delete-folder` (apaga também a pasta), `--keep-images`, `--yes`; se a pasta já foi apagada à mão, `--orphan --project NOME`. Não apaga backups.
 - **Nunca** correr `docker compose down -v`: apaga o volume `pgdata` e todos os dados. `docker compose down` (sem `-v`) é seguro.
 - **Repor movimentos** de UM utilizador (apaga os seus movimentos e importações, mantém categorias, regras, contas e utilizadores; as categorizações manuais voltam a aplicar-se ao reimportar): `make reset-data USERNAME=ana`.
 - **Backup**: ainda não está automatizado (o `scripts/install.sh` consegue fazer um backup pontual de uma instância). Por agora, copie a base de dados à mão e guarde a cópia fora da máquina:

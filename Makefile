@@ -1,8 +1,10 @@
 COMPOSE ?= docker compose
 
-.PHONY: install up down test test-db test-frontend lint migrate create-user reset-data
+.PHONY: install uninstall up down test test-db test-frontend lint migrate create-user reset-data
 install:  # instalador interativo (ver scripts/install.sh --help)
 	scripts/install.sh
+uninstall:  # remove a instância DESTA pasta (contentores, volumes, imagens); mostra o plano e pede confirmação
+	scripts/uninstall.sh
 up:
 	$(COMPOSE) up --build -d
 down:
