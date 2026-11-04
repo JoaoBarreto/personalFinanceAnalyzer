@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Coverage } from "../api";
 import CategoryMatrix, { type Matrix } from "../components/CategoryMatrix";
@@ -11,8 +10,8 @@ import { dataPt, eur, mesPt, pct } from "../lib/format";
 
 type Summary = {
   periodo: { data_de: string; data_ate: string };
-  despesas: string; receitas: string; poupanca: string; taxa_poupanca_pct: string | null;
-  saldo: { inicio: string | null; fim: string | null; transferencias: string; transferencias_detalhe?: { nome: string; total: string }[]; diferenca: string | null; reconcilia: boolean | null };
+  despesas: string; receitas: string; poupanca: string; investido: string; taxa_poupanca_pct: string | null;
+  saldo: { inicio: string | null; fim: string | null; transferencias: string; diferenca: string | null; reconcilia: boolean | null };
   anterior: { variacao_despesas_pct: string | null; variacao_receitas_pct: string | null };
   media_6m: { variacao_despesas_pct: string | null };
   n_por_categorizar: number;
@@ -41,14 +40,12 @@ export default function Dashboard() {
   const modo: "mes" | "ano" = sp.get("modo") === "ano" ? "ano" : "mes";
   const mes = sp.get("mes") ?? "";
   const ano = sp.get("ano") ?? "";
-  const transf = sp.get("transf") === "true";
   const titular = sp.get("titular") ?? "";
   const setParam = (k: string, v: string) =>
     setSp((prev) => { const n = new URLSearchParams(prev); if (v) n.set(k, v); else n.delete(k); return n; }, { replace: true });
   const setModo = (m: "mes" | "ano") => setParam("modo", m === "ano" ? "ano" : "");
   const setMes = (v: string) => setParam("mes", v);
   const setAno = (v: string) => setParam("ano", v);
-  const setTransf = (v: boolean) => setParam("transf", v ? "true" : "");
   const setTitular = (v: string) => setParam("titular", v);
   const nav = useNavigate();
 
@@ -61,21 +58,21 @@ export default function Dashboard() {
   const ready = !cov.loading;
   const ym = modo === "ano" ? anoEf : mesEf;
   const params = !ym ? {} : modo === "ano" ? { data_de: `${ym}-01-01`, data_ate: `${ym}-12-31` } : { data_de: `${ym}-01`, data_ate: lastDay(ym) };
-  const common = { ...params, incluir_transferencias: transf, titular };
-  const deps = [ready, modo, ym, transf, titular];
+  const common = { ...params, titular };
+  const deps = [ready, modo, ym, titular];
 
   const summary = useAsync(() => (ready ? api.get<Summary>("/api/analytics/summary", common) : Promise.resolve(null)), deps);
   const cats = useAsync(() => (ready ? api.get<{ itens: CatItem[] }>("/api/analytics/by-category", common) : Promise.resolve(null)), deps);
   // Gráfico do período: em «Mês», os 12 meses até ao mês escolhido; em «Ano», janeiro–dezembro desse ano.
   const periodos = useAsync(
-    () => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", modo === "ano" ? common : { incluir_transferencias: transf, titular, data_ate: params.data_ate }) : Promise.resolve(null)),
+    () => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", modo === "ano" ? common : { titular, data_ate: params.data_ate }) : Promise.resolve(null)),
     deps,
   );
-  const anos = useAsync(() => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", { granularidade: "ano", incluir_transferencias: transf, titular }) : Promise.resolve(null)), [ready, transf, titular]);
+  const anos = useAsync(() => (ready ? api.get<{ periodos: PeriodItem[] }>("/api/analytics/monthly", { granularidade: "ano", titular }) : Promise.resolve(null)), [ready, titular]);
   const anoMatriz = ym.slice(0, 4);
   const matrix = useAsync(
-    () => (ready && anoMatriz ? api.get<Matrix>("/api/analytics/category-matrix", { data_de: `${anoMatriz}-01-01`, data_ate: `${anoMatriz}-12-31`, incluir_transferencias: transf, titular }) : Promise.resolve(null)),
-    [ready, anoMatriz, transf, titular],
+    () => (ready && anoMatriz ? api.get<Matrix>("/api/analytics/category-matrix", { data_de: `${anoMatriz}-01-01`, data_ate: `${anoMatriz}-12-31`, titular }) : Promise.resolve(null)),
+    [ready, anoMatriz, titular],
   );
 
   const s = summary.data;
@@ -85,7 +82,7 @@ export default function Dashboard() {
   };
   // Clicar numa barra abre os movimentos desse mesmo período e filtros (os totais têm de bater com a barra).
   const drill = (id: number | null) => {
-    const q = new URLSearchParams({ transf: String(transf), so_despesas: "1" });
+    const q = new URLSearchParams({ so_despesas: "1" });
     const per = params as { data_de?: string; data_ate?: string };
     if (per.data_de && per.data_ate) { q.set("data_de", per.data_de); q.set("data_ate", per.data_ate); }
     if (titular) q.set("titular", titular);
@@ -117,7 +114,6 @@ export default function Dashboard() {
           <button onClick={() => step(1)} aria-label={modo === "ano" ? "Ano seguinte" : "Mês seguinte"} disabled={!ym}>›</button>
         </div>
         <TitularSelect value={titular} onChange={setTitular} />
-        <label className="check"><input type="checkbox" checked={transf} onChange={(e) => setTransf(e.target.checked)} /> Incluir transferências<InfoTip title="Transferências e poupança/investimento"><p>São movimentos de dinheiro que <strong style={{ display: "inline" }}>não são gasto nem ganho</strong>: o dinheiro só sai da conta à ordem. Inclui as transferências entre contas suas e o dinheiro <strong style={{ display: "inline" }}>poupado ou investido</strong> fora da conta (corretora como a Interactive Brokers, depósitos a prazo, certificados...). Entram aqui as categorias do tipo transferência: «Transferências entre contas» e «Poupança/Investimento».</p><p><strong style={{ display: "inline" }}>Desligado (recomendado):</strong> ficam fora de receitas e despesas, por isso a taxa de poupança mede o que realmente poupa, incluindo o que enviou para investir.</p><p><strong style={{ display: "inline" }}>Ligado:</strong> o que sai passa a contar como despesa e o que entra como receita, e a taxa de poupança desce porque o dinheiro poupado deixa de contar como poupado. Serve para ver todos os movimentos de dinheiro, não para medir a poupança.</p></InfoTip></label>
         {s && s.n_por_categorizar > 0 && <Link className="badge warn" to="/rever">{s.n_por_categorizar} por categorizar</Link>}
       </div>
       <CoverageBanner />
@@ -126,37 +122,34 @@ export default function Dashboard() {
         <>
           <section className="kpis">
             <div className="hero">
-              <span className="kpi-label">Saldo da conta<InfoTip title="Saldo da conta"><p>Dinheiro que tem na conta no <strong style={{ display: "inline" }}>fim do período</strong>, lido da coluna «Saldo» do último movimento até essa data.</p><p>Não depende das categorias nem do filtro «Incluir transferências».</p></InfoTip></span>
+              <span className="kpi-label">Saldo da conta<InfoTip title="Saldo da conta"><p>Dinheiro que tem na conta no <strong style={{ display: "inline" }}>fim do período</strong>, lido da coluna «Saldo» do último movimento até essa data.</p><p>Não depende das categorias.</p></InfoTip></span>
               <span className="hero-value">{eur(s.saldo.fim)}</span>
               <span className="kpi-sub">em {dataPt(dataSaldo)}</span>
             </div>
             <div className="tile">
-              <span className="kpi-label">Poupança do período<InfoTip title="Poupança do período"><p>Receitas menos despesas {doPeriodo}, sem as transferências.</p><p>Taxa de poupança = poupança ÷ receitas.</p><p>O dinheiro que enviou para poupança/investimento (ex.: Interactive Brokers, depósitos a prazo) conta como poupado: só não é poupança se ligar «Incluir transferências», porque aí passa a contar como despesa.</p></InfoTip></span><span className="tile-value">{eur(s.poupanca)}</span>
+              <span className="kpi-label">Poupança do período<InfoTip title="Poupança do período"><p>Receitas menos despesas {doPeriodo}: o que ficou na conta.</p><p>«Poupado/investido fora da conta» é o dinheiro que enviou para fora (Interactive Brokers, depósitos a prazo...) e que continua a ser seu. Aparece nas despesas como «Poupança/Investimento», mas conta como poupado.</p><p>Taxa de poupança = (poupança + investido fora da conta) ÷ receitas, sem contar as transferências entre as suas contas.</p></InfoTip></span><span className="tile-value">{eur(s.poupanca)}</span>
+              {Number(s.investido) > 0 && <span className="kpi-sub small">+ {eur(s.investido)} poupados/investidos fora da conta</span>}
               <span className="kpi-sub small">Taxa de poupança {pct(s.taxa_poupanca_pct)}</span>
-              {transf ? <span className="kpi-sub small warn-text">Inclui transferências como receita/despesa: a taxa não mede a poupança real.</span>
-                : Number(s.saldo.transferencias) < 0 && <span className="kpi-sub small">Dos quais {eur(String(-Number(s.saldo.transferencias)))} saíram da conta para poupança/investimento ou outras transferências.</span>}
             </div>
             <div className="tile">
-              <span className="kpi-label">Receitas<InfoTip title="Receitas"><p>Soma dos movimentos de entrada (valor positivo) {doPeriodo}, sem as transferências.</p><p>A variação compara com o {anterior}: (atual − anterior) ÷ anterior.</p></InfoTip></span><span className="tile-value">{eur(s.receitas)}</span>
+              <span className="kpi-label">Receitas<InfoTip title="Receitas"><p>Soma dos movimentos de entrada (valor positivo) {doPeriodo}.</p><p>A variação compara com o {anterior}: (atual − anterior) ÷ anterior.</p></InfoTip></span><span className="tile-value">{eur(s.receitas)}</span>
               <Delta v={s.anterior.variacao_receitas_pct} upIsGood label={anterior} />
             </div>
             <div className="tile">
-              <span className="kpi-label">Despesas<InfoTip title="Despesas"><p>Soma dos movimentos de saída (valor negativo) {doPeriodo}, sem as transferências. Os reembolsos não são descontados.</p><p>A variação compara com o {anterior}.{modo === "mes" ? " A «média 6 meses» é a média mensal dos 6 meses completos anteriores ao mês escolhido (só desde o 1.º movimento)." : ""}</p></InfoTip></span><span className="tile-value">{eur(s.despesas)}</span>
+              <span className="kpi-label">Despesas<InfoTip title="Despesas"><p>Soma dos movimentos de saída (valor negativo) {doPeriodo}. Os reembolsos não são descontados.</p><p>A variação compara com o {anterior}.{modo === "mes" ? " A «média 6 meses» é a média mensal dos 6 meses completos anteriores ao mês escolhido (só desde o 1.º movimento)." : ""}</p></InfoTip></span><span className="tile-value">{eur(s.despesas)}</span>
               <Delta v={s.anterior.variacao_despesas_pct} upIsGood={false} label={anterior} />
               {modo === "mes" && <Delta v={s.media_6m.variacao_despesas_pct} upIsGood={false} label="média 6 meses" />}
             </div>
           </section>
           {s.saldo.inicio !== null && (
             <section className="card bridge" aria-label="Do saldo inicial ao final">
-              <h2>Do saldo inicial ao final<InfoTip title="Do saldo inicial ao final"><p>Saldo inicial + receitas − despesas ± transferências = saldo final.</p><p>Transferências são movimentos entre as suas contas e o dinheiro poupado ou investido fora da conta (corretora, depósitos a prazo...): não são gasto nem ganho. Ficam fora de receitas e despesas, por isso aparecem à parte. Se as contas não fecharem, faltam movimentos: veja o aviso de cobertura.</p></InfoTip></h2>
+              <h2>Do saldo inicial ao final<InfoTip title="Do saldo inicial ao final"><p>Saldo inicial + receitas − despesas = saldo final.</p><p>Todos os movimentos contam, incluindo transferências e «Poupança/Investimento» (dinheiro enviado para a corretora, depósitos a prazo...). Se as contas não fecharem, faltam movimentos: veja o aviso de cobertura.</p></InfoTip></h2>
               <dl>
                 <dt>{primeiro && primeiro > s.periodo.data_de ? `Saldo antes do 1.º movimento (${dataPt(primeiro)})` : `Saldo inicial (${dataPt(s.periodo.data_de)})`}</dt><dd>{eur(s.saldo.inicio)}</dd>
                 <dt>+ Receitas</dt><dd>{eur(s.receitas)}</dd>
                 <dt>− Despesas</dt><dd>{eur(s.despesas)}</dd>
-                {s.saldo.transferencias !== "0.00" && (s.saldo.transferencias_detalhe ?? []).filter((d) => d.total !== "0.00").map((d) => <Fragment key={d.nome}><dt>± {d.nome} (fora dos totais)</dt><dd>{eur(d.total)}</dd></Fragment>)}
                 <dt className="strong">= Saldo final ({dataPt(dataSaldo)})</dt><dd className="strong">{eur(s.saldo.fim)}</dd>
               </dl>
-              {s.saldo.transferencias !== "0.00" && <p className="small muted">Transferências, poupança e investimento não são gasto nem ganho: é dinheiro que só muda de sítio. «Poupança/Investimento» é o que enviou para fora da conta (corretora como a Interactive Brokers, depósitos a prazo...), continua a ser seu e conta como poupado. «Transferências entre contas» são movimentos entre contas suas.</p>}
               {s.saldo.reconcilia === true && <p className="ok small">✓ As contas fecham ao cêntimo.</p>}
               {s.saldo.reconcilia === false && <p className="warn-text small">✗ Não fecha (diferença {eur(s.saldo.diferenca)}): provavelmente faltam movimentos. Veja o aviso de cobertura acima ou importe o período em falta.</p>}
             </section>
@@ -169,7 +162,7 @@ export default function Dashboard() {
             Despesas por categoria
             <InfoTip title="Como se calcula">
               <p>Dinheiro que <strong style={{ display: "inline" }}>saiu</strong> da conta {noPeriodo}, somado por categoria. Contam os movimentos de saída (valor negativo); entradas e reembolsos não são descontados.</p>
-              <p>As transferências ficam de fora, a não ser que ative «Incluir transferências». Respeita o filtro de titular.</p>
+              <p>Respeita o filtro de titular.</p>
               <p>A percentagem é o valor da categoria ÷ total das despesas do período (somam 100 %).</p>
               <p>«Por categorizar» são movimentos ainda sem categoria; «Outros (N)» junta as N categorias mais pequenas. Clique numa barra para ver os movimentos.</p>
             </InfoTip>
@@ -180,16 +173,16 @@ export default function Dashboard() {
           )}
         </section>
         <section className="card">
-          <h2>{modo === "ano" ? `Evolução mensal em ${ym}` : "Evolução mensal (12 meses)"}<InfoTip title="Evolução mensal"><p>Receitas e despesas de cada mês (barras) e poupança = receitas − despesas (linha), sem transferências.</p><p>{modo === "ano" ? "Mostra janeiro a dezembro do ano escolhido." : "Mostra os 12 meses até ao mês escolhido."} «Ver tabela» dá os números e o saldo no fim de cada mês.</p></InfoTip></h2>
-          {periodos.data && <PeriodChart periodos={periodos.data.periodos} titulo="Receitas, despesas e poupança por mês" />}
+          <h2>{modo === "ano" ? `Evolução mensal em ${ym}` : "Evolução mensal (12 meses)"}<InfoTip title="Evolução mensal"><p>Receitas e despesas de cada mês (barras) e poupança = receitas − despesas (linha).</p><p>{modo === "ano" ? "Mostra janeiro a dezembro do ano escolhido." : "Mostra os 12 meses até ao mês escolhido."} O último mês com dados não mostra poupança (ainda está incompleto). «Ver tabela» dá os números e o saldo no fim de cada mês.</p></InfoTip></h2>
+          {periodos.data && <PeriodChart parcialEm={ultimo?.slice(0, 7)} periodos={periodos.data.periodos} titulo="Receitas, despesas e poupança por mês" />}
         </section>
       </div>
       <section className="card">
-        <h2>Despesas por categoria e mês, {anoMatriz}<InfoTip title="Categoria × mês"><p>Despesas de cada categoria-pai em cada mês de {anoMatriz}, com o total por categoria e por mês. Mesmo critério das barras: saídas, sem transferências.</p></InfoTip></h2>
+        <h2>Despesas por categoria e mês, {anoMatriz}<InfoTip title="Categoria × mês"><p>Despesas de cada categoria-pai em cada mês de {anoMatriz}, com o total por categoria e por mês. Mesmo critério das barras: saídas.</p></InfoTip></h2>
         {matrix.data && <CategoryMatrix m={matrix.data} />}
       </section>
       <section className="card">
-        <h2>Por ano<InfoTip title="Por ano"><p>Receitas, despesas e poupança de cada ano com movimentos (1 jan – 31 dez), sem transferências.</p></InfoTip></h2>
+        <h2>Por ano<InfoTip title="Por ano"><p>Receitas, despesas e poupança de cada ano com movimentos (1 jan – 31 dez).</p></InfoTip></h2>
         {anos.data && <PeriodChart periodos={anos.data.periodos} titulo="Receitas, despesas e poupança por ano" />}
       </section>
     </>

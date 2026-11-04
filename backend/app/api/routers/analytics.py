@@ -1,7 +1,7 @@
 """Agregações do dashboard (PRD 3.9), em SQL.
 
 Convenções: despesa = montante < 0, receita = montante > 0 (reembolsos só na Fase 2). Movimentos cuja categoria
-é do tipo `transferencia` ficam fora dos totais salvo `incluir_transferencias=true`. Dinheiro sempre em string.
+é do tipo `transferencia` contam como movimentos normais (`incluir_transferencias=false` é só um filtro opcional da API). Dinheiro sempre em string.
 """
 
 import calendar
@@ -53,19 +53,6 @@ def _transfer_net(db: Session, scope, d0: date, d1: date) -> Decimal:
         .where(Categoria.tipo == "transferencia", Movimento.data_movimento.between(d0, d1), *scope)
     )
     return Decimal(db.scalar(q))
-
-
-def _transfer_detail(db: Session, scope, d0: date, d1: date) -> list[dict]:
-    """Transferências do período por categoria (com sinal), para o dashboard as separar."""
-    q = (
-        select(Categoria.nome, func.sum(Movimento.montante))
-        .select_from(Movimento)
-        .join(Categoria, Categoria.id == Movimento.categoria_id)
-        .where(Categoria.tipo == "transferencia", Movimento.data_movimento.between(d0, d1), *scope)
-        .group_by(Categoria.nome)
-        .order_by(Categoria.nome)
-    )
-    return [{"nome": n, "total": _s(Decimal(v))} for n, v in db.execute(q).all()]
 
 
 def _s(x: Decimal) -> str:
@@ -126,13 +113,14 @@ def summary(
     data_ate: date | None = None,
     conta_id: int | None = None,
     titular: str | None = None,
-    incluir_transferencias: bool = False,
+    incluir_transferencias: bool = True,
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
 ):
     scope = scope_conds(conta_id, titular)
     d0, d1 = _period(db, data_de, data_ate)
     desp, rec = _totals(db, scope, incluir_transferencias, d0, d1)
+    desp_x, rec_x = _totals(db, scope, False, d0, d1)
     p0, p1 = _previous(d0, d1)
     pdesp, prec = _totals(db, scope, incluir_transferencias, p0, p1)
     medias = {}
@@ -158,11 +146,13 @@ def summary(
             "inicio": None if inicio is None else _s(inicio),
             "fim": None if fim is None else _s(fim),
             "transferencias": _s(transf),
-            "transferencias_detalhe": [] if incluir_transferencias else _transfer_detail(db, scope, d0, d1),
             "diferenca": None if diferenca is None else _s(diferenca),
             "reconcilia": None if diferenca is None else diferenca == 0,
         },
-        "taxa_poupanca_pct": _pct(rec - desp, rec),
+        # Dinheiro enviado para fora da conta (poupança/investimento, depósitos...) = transferências líquidas de saída.
+        "investido": _s(-_transfer_net(db, scope, d0, d1)),
+        # A taxa conta o dinheiro investido como poupado: usa receitas/despesas sem transferências.
+        "taxa_poupanca_pct": _pct(rec_x - desp_x, rec_x),
         "anterior": {
             "periodo": {"data_de": p0, "data_ate": p1},
             "despesas": _s(pdesp),
@@ -181,7 +171,7 @@ def by_category(
     data_ate: date | None = None,
     conta_id: int | None = None,
     titular: str | None = None,
-    incluir_transferencias: bool = False,
+    incluir_transferencias: bool = True,
     nivel: str = Query("filho", pattern="^(filho|pai)$"),
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
@@ -225,7 +215,7 @@ def monthly(
     data_ate: date | None = None,
     conta_id: int | None = None,
     titular: str | None = None,
-    incluir_transferencias: bool = False,
+    incluir_transferencias: bool = True,
     granularidade: str = Query("mes", pattern="^(mes|ano)$"),
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),
@@ -271,7 +261,7 @@ def category_matrix(
     data_ate: date | None = None,
     conta_id: int | None = None,
     titular: str | None = None,
-    incluir_transferencias: bool = False,
+    incluir_transferencias: bool = True,
     nivel: str = Query("pai", pattern="^(filho|pai)$"),
     _: Auth = Depends(require_auth),
     db: Session = Depends(get_db),

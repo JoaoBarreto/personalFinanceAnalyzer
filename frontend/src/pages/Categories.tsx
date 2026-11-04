@@ -46,7 +46,7 @@ export default function Categories() {
       <form className="card row" onSubmit={(e) => { e.preventDefault(); void wrap(async () => { await api.post("/api/categories", { nome: novoNome, tipo: novoTipo }); setNovoNome(""); }, "Categoria criada."); }}>
         <input placeholder="Nova categoria (ex.: Educação)" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} required />
         <select value={novoTipo} onChange={(e) => setNovoTipo(e.target.value)} aria-label="Tipo">
-          <option value="despesa">despesa</option><option value="receita">receita</option><option value="transferencia">transferência (fora dos totais)</option>
+          <option value="despesa">despesa</option><option value="receita">receita</option><option value="transferencia">transferência / poupança (não conta na taxa de poupança)</option>
         </select>
         <button className="primary">Criar categoria</button>
       </form>
@@ -71,7 +71,7 @@ export default function Categories() {
           </tbody>
         </table>
       </div>
-      <p className="muted small">Edite o nome e carregue em Enter. Desativar esconde a categoria das listas sem perder o histórico. Uma categoria do tipo «transferência» fica fora das despesas e das receitas.</p>
+      <p className="muted small">Edite o nome e carregue em Enter. Desativar esconde a categoria das listas sem perder o histórico. Uma categoria do tipo «transferência» (ex.: Poupança/Investimento) aparece nos movimentos e nas despesas como qualquer outra, mas o dinheiro conta como poupado na taxa de poupança.</p>
     </>
   );
 }

@@ -30,14 +30,18 @@ def test_periodo_por_omissao_e_o_mes_do_ultimo_movimento(api, db):
     assert s["periodo"] == {"data_de": "2026-10-01", "data_ate": "2026-10-31"} and s["despesas"] == "872.99"
 
 
-def test_transferencias_ficam_fora_dos_totais(api, db):
+def test_transferencias_contam_como_movimentos_normais(api, db):
     import_all(api)
     tid = txs(api, q="EMPRESA")["items"][0]["id"]
     api.patch(f"/api/transactions/{tid}", json={"categoria_id": cat_id(db, "Transferências entre contas")})
     s = get(api, "summary", data_de="2026-10-01", data_ate="2026-10-31")
-    assert s["receitas"] == "2380.91"
-    com = get(api, "summary", data_de="2026-10-01", data_ate="2026-10-31", incluir_transferencias=True)
-    assert com["receitas"] == "3280.91"
+    assert s["receitas"] == "3280.91"  # por omissão contam
+    sem = get(api, "summary", data_de="2026-10-01", data_ate="2026-10-31", incluir_transferencias=False)
+    assert sem["receitas"] == "2380.91"
+    assert (
+        s["taxa_poupanca_pct"] == sem["taxa_poupanca_pct"]
+    )  # a taxa não conta transferências como gasto/ganho
+    assert s["investido"] == "-900.00"  # entrada líquida de 900 (não é dinheiro investido)
 
 
 def test_by_category(api, db):

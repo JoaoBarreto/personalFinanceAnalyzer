@@ -67,28 +67,36 @@ export function CategoryBars({ items, onPick, max = 8 }: { items: CatItem[]; onP
   );
 }
 
-function niceMax(v: number): number {
-  if (v <= 0) return 100;
-  const p = 10 ** Math.floor(Math.log10(v));
-  for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
-  return 10 * p;
+/** Eixo com passos «redondos» (1, 2, 5 × 10ⁿ) em cêntimos, incluindo 0; no máx. ~6 marcas. */
+export function niceTicks(minC: number, maxC: number, target = 6): number[] {
+  const lo = Math.min(0, minC), hi = Math.max(0, maxC);
+  if (hi - lo <= 0) return [0, 10000];
+  const raw = (hi - lo) / target;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const step = ([1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? 10 * p);
+  const start = Math.floor(lo / step) * step, end = Math.ceil(hi / step) * step;
+  const out: number[] = [];
+  for (let v = start; v <= end + step / 2; v += step) out.push(Math.round(v));
+  return out;
 }
 const axis = (c: number) => Math.round(c / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 
 /** Receitas vs despesas (barras agrupadas, 1 eixo) + linha do saldo líquido. Legenda sempre visível. */
-export function PeriodChart({ periodos: meses, titulo }: { periodos: PeriodItem[]; titulo: string }) {
+export function PeriodChart({ periodos: meses, titulo, parcialEm }: { periodos: PeriodItem[]; titulo: string; parcialEm?: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const [table, setTable] = useState(false);
   const W = 720, H = 300, L = 56, R = 76, T = 16, B = 34;
   const iw = W - L - R, ih = H - T - B;
-  const vals = meses.flatMap((m) => [toCents(m.despesas), toCents(m.receitas), toCents(m.poupanca)]);
-  const top = niceMax(Math.max(0, ...vals));
-  const bottom = Math.min(0, ...vals) < 0 ? -niceMax(-Math.min(...vals)) : 0;
+  // O último mês com dados (ainda incompleto: o salário entra no fim do mês anterior e a transferência para
+  // investir sai no início) não mostra poupança, senão aparece sempre negativa.
+  const parcial = (m: PeriodItem) => m.periodo === parcialEm;
+  const vals = meses.flatMap((m) => [toCents(m.despesas), toCents(m.receitas), ...(parcial(m) ? [] : [toCents(m.poupanca)])]);
+  const ticks = niceTicks(Math.min(0, ...vals), Math.max(0, ...vals));
+  const bottom = ticks[0], top = ticks[ticks.length - 1];
   const y = (c: number) => T + ih - ((c - bottom) / (top - bottom)) * ih;
   const band = iw / Math.max(meses.length, 1);
   const bw = Math.min(24, band / 3);
   const gap = 2;
-  const ticks = Array.from({ length: 5 }, (_, i) => bottom + ((top - bottom) * i) / 4);
   const x0 = (i: number) => L + band * i + band / 2;
   const bar = (cx: number, c: number) => {
     const y1 = y(Math.max(c, 0)), y0 = y(0), h = Math.max(y0 - y1, 0);
@@ -98,10 +106,10 @@ export function PeriodChart({ periodos: meses, titulo }: { periodos: PeriodItem[
   const has = (m: PeriodItem) => toCents(m.receitas) !== 0 || toCents(m.despesas) !== 0;
   let line = "";
   meses.forEach((m, i) => {
-    if (!has(m)) return;
+    if (!has(m) || parcial(m)) return;
     line += `${i > 0 && has(meses[i - 1]) ? "L" : "M"}${x0(i)},${y(toCents(m.poupanca))} `;
   });
-  const lastIdx = meses.map(has).lastIndexOf(true);
+  const lastIdx = meses.map((m) => has(m) && !parcial(m)).lastIndexOf(true);
   const last = lastIdx >= 0 ? meses[lastIdx] : undefined;
   return (
     <div className="chart-wrap">
@@ -118,7 +126,7 @@ export function PeriodChart({ periodos: meses, titulo }: { periodos: PeriodItem[
           <thead><tr><th>Período</th><th className="num">Receitas</th><th className="num">Despesas</th><th className="num">Poupança</th><th className="num">Saldo no fim</th></tr></thead>
           <tbody>
             {meses.map((m) => (
-              <tr key={m.periodo}><td>{mesPt(m.periodo)}</td><td className="num">{eur(m.receitas)}</td><td className="num">{eur(m.despesas)}</td><td className="num">{eur(m.poupanca)}</td><td className="num">{eur(m.saldo_fim)}</td></tr>
+              <tr key={m.periodo}><td>{mesPt(m.periodo)}</td><td className="num">{eur(m.receitas)}</td><td className="num">{eur(m.despesas)}</td><td className="num">{parcial(m) ? "—" : eur(m.poupanca)}</td><td className="num">{eur(m.saldo_fim)}</td></tr>
             ))}
           </tbody>
         </table>
@@ -138,7 +146,7 @@ export function PeriodChart({ periodos: meses, titulo }: { periodos: PeriodItem[
             </g>
           ))}
           <path d={line} className="net-line" fill="none" />
-          {meses.map((m, i) => has(m) && (
+          {meses.map((m, i) => has(m) && !parcial(m) && (
             <circle key={m.periodo} cx={x0(i)} cy={y(toCents(m.poupanca))} r={4} className="net-dot" />
           ))}
           {last && <text x={x0(lastIdx) + 10} y={y(toCents(last.poupanca)) + 4} className="end-label">{eur(last.poupanca)}</text>}
@@ -153,7 +161,7 @@ export function PeriodChart({ periodos: meses, titulo }: { periodos: PeriodItem[
           <strong>{mesPt(meses[hover].periodo)}</strong>
           <div>Receitas {eur(meses[hover].receitas)}</div>
           <div>Despesas {eur(meses[hover].despesas)}</div>
-          <div>Poupança {eur(meses[hover].poupanca)}</div>
+          {!parcial(meses[hover]) && <div>Poupança {eur(meses[hover].poupanca)}</div>}
           <div>Saldo no fim {eur(meses[hover].saldo_fim)}</div>
         </div>
       )}
