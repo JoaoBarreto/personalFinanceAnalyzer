@@ -23,20 +23,19 @@ Requisitos: Docker com Compose (ou Podman com `podman-compose`) e git. Não é p
 ```bash
 git clone https://github.com/JoaoBarreto/personalFinanceAnalyzer.git
 cd personalFinanceAnalyzer
-cp .env.example .env
+scripts/install.sh
 ```
 
-1. **Editar o `.env`**: pôr uma `POSTGRES_PASSWORD` forte. As restantes variáveis têm valores por omissão sensatos (ver a tabela abaixo). O `.env` nunca vai para o git.
-2. **Arrancar**: `docker compose up -d --build` (ou `make up`; com Podman, `make up COMPOSE="podman compose"`). No arranque o backend aplica as migrações e o seed de categorias em português, incluindo «Poupança/Investimento», sozinho.
-3. **Criar o primeiro utilizador** (repita para cada pessoa; cada um só vê os seus dados) (pede a palavra-passe):
-   ```bash
-   make create-user USERNAME=joao NOME="João"
-   ```
-   Para criar sem interação: `echo 'palavra-passe' | make create-user USERNAME=joao NOME="João" EXEC=-T ARGS=--password-stdin`.
-4. **Abrir a app** em `http://127.0.0.1:8080` (porta `FRONTEND_PORT`) e entrar.
-5. **Importar** o extrato em «Importar», rever o preview e confirmar. Depois categorizar em «Por categorizar» (a regra criada aplica-se por omissão a todas as linhas já importadas).
+O instalador faz as perguntas necessárias (com valores por omissão sensatos), escreve o `.env` (modo 600, password da base de dados gerada), arranca a aplicação, espera que responda e cria o primeiro utilizador. Também sabe, se quiser:
 
-Antes de usar com dados reais, confirme que a lista de contas e os saldos batem com o banco (aviso de cobertura no dashboard).
+- **instalar ao lado de uma instância existente** (outra pasta, outro nome de projeto e outra porta) sem lhe tocar, por exemplo para testar uma versão nova;
+- **copiar os dados** de uma instância antiga: faz um backup só de leitura e restaura-o na instalação nova antes de o backend arrancar (o utilizador e o nome da base de dados têm de coincidir);
+- **publicar por HTTPS** com `tailscale serve` numa porta própria e **expor na rede local** (opcional);
+- correr **sem perguntas** (`--yes` e flags, ver `scripts/install.sh --help`).
+
+É seguro repetir: reconhece uma instância existente, atualiza-a e mantém os dados. Recusa restaurar por cima de dados e nunca usa `down -v`.
+
+Manualmente, o mesmo faz-se assim: `cp .env.example .env` (pôr uma `POSTGRES_PASSWORD` forte), `docker compose up -d --build` e `make create-user USERNAME=joao NOME="João"`. Abra `http://127.0.0.1:8080` (porta `FRONTEND_PORT`), importe o extrato em «Importar» e categorize em «Por categorizar».
 
 ### Acesso remoto (recomendado): Tailscale
 
