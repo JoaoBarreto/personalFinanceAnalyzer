@@ -97,6 +97,10 @@ make up                                   # db + backend + frontend em http://12
 
 Migrações à mão: `cd backend && DATABASE_URL=postgresql+psycopg://... .venv/bin/alembic upgrade head`. O `docker-compose.yml` foi testado com `podman-compose` e com Docker.
 
+## Outros bancos e outros utilizadores
+
+Cada banco tem um parser estrito. Para adicionar um banco novo (ex.: ActiveBank) ou o extrato de outro utilizador, siga [docs/novo-banco.md](docs/novo-banco.md). Os scripts de suporte estão em `scripts/`: `mask_statement.py` (estrutura do ficheiro com valores mascarados) e `check_statement.py <banco> ficheiro` (o parser aceita-o?).
+
 ## Dados e privacidade
 
 Extratos reais e ficheiros de dados nunca vão para o repositório (ver `.gitignore`; `dados.csv` e `backend/tests/fixtures/local/` estão ignorados). Os fixtures de teste são sintéticos ou anonimizados. Credenciais (palavra-passe da BD, tokens do GitHub) ficam só no `.env` ou fora da máquina; use tokens de curta duração e revogue-os depois de usar.
